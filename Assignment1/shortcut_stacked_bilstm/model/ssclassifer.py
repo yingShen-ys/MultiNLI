@@ -45,6 +45,7 @@ class SSClassifier(nn.Module):
     def __init__(self, params):
         super(SSClassifier, self).__init__()
 
+
         self.embeddings = nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"])
 
         self.ssencoder = SSEncoder(params["embed_dim"], params['lstm_h'])
@@ -62,7 +63,6 @@ class SSClassifier(nn.Module):
             mlps.append(mlp)
         self.mlps = nn.Sequential(*mlps)
 
-
         self.classifer = nn.Linear(params['mlp_h'][-1], params["num_class"])
 
     def init_weight(self, pretrained_embedding):
@@ -70,26 +70,37 @@ class SSClassifier(nn.Module):
 
 
     def forward(self, premise, hypothesis):
+
+
+        print("-"*10,"Embedding Layer","-"*10,)
+
         premise_embed = self.embeddings(premise)
         hypothesis_embed = self.embeddings(hypothesis)
         print("premise_embed:",premise_embed.size())
         print("hypothesis_embed:",hypothesis_embed.size())
 
+        print("-" * 10, "Embedding Layer", "-" * 10, )
+
+        print("-" * 10, "Encoder stage", "-" * 10, )
         premise_hidden = self.ssencoder(premise_embed)
         hypothesis_hidden = self.ssencoder(hypothesis_embed)
 
-        print("-"*10,"After encoder","-"*10,)
+        print("After SSBiLSTM:")
         print("premise_hidden:", premise_hidden.size())
         print("hypothesis_hidden:", hypothesis_hidden.size())
 
         m = torch.cat([premise_hidden,
                        hypothesis_hidden,
                        torch.abs(premise_hidden-hypothesis_hidden),
-                       torch.mul(premise_hidden, hypothesis_hidden)], 2)
+                       torch.mul(premise_hidden, hypothesis_hidden)], 1)
 
-        print("")
+        print("After concat:", m.size())
+        print("-" * 10, "Encoder stage", "-" * 10, )
 
+        print("-" * 10, "Classifier stage", "-" * 10, )
         linear = self.mlps(m)
         prediction = self.classifer(linear)
+        print("-" * 10, "Classifier stage", "-" * 10, )
+
 
         return prediction

@@ -1,6 +1,9 @@
 from __future__ import print_function
 
 import sys
+
+from sklearn.metrics import f1_score, accuracy_score
+
 sys.path.append('../../')
 print(sys.path[0])
 
@@ -75,6 +78,7 @@ def main(options):
     params["vocab_size"] = len(TEXT_FIELD.vocab)
     params["num_class"] = len(LABEL_FIELD.vocab)
     params["embed_dim"] = embed_dim
+
     model = SSClassifier(params)
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
@@ -111,8 +115,6 @@ def main(options):
             loss.backward()
             optimizer.step()
 
-            print("Training loss:", loss.data[0])
-
         if np.isnan(train_loss):
             print("Training: NaN values happened, rebooting...\n\n")
             complete = False
@@ -121,12 +123,54 @@ def main(options):
         model.eval()
         valid_loss = 0.0
         for _, batch in enumerate(snli_val_iter):
+            premise, premis_lens = batch.premise
+            hypothesis, hypothesis_lens = batch.hypothesis
+            label = batch.label
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
             valid_loss += loss.data[0] / len(snli_val_iter)
 
+        if np.isnan(valid_loss):
+            print("Training: NaN values happened, rebooting...\n\n")
+            complete = False
+            break
 
+        if (valid_loss < min_valid_loss):
+            curr_patience = patience
+            min_valid_loss = valid_loss
+            torch.save(model, model_path)
+            print("Found new best model, saving to disk...")
+        else:
+            curr_patience -= 1
 
+    if complete:
+        best_model = torch.load(model_path)
+        best_model.eval()
+        test_loss = 0.0
+        predictions = []
+        labels = []
+        for _, batch in enumerate(snli_test_iter):
+            premise, premis_lens = batch.premise
+            hypothesis, hypothesis_lens = batch.hypothesis
+            label = batch.label
+
+            output = best_model(premise=premise, hypothesis=hypothesis)
+            loss = criterion(output, label)
+            test_loss += loss.data[0] / len(snli_test_iter)
+
+            predictions.append(output.cpu().data.numpy().reshape(-1))
+            labels.append(label.cpu().data.numpy().reshape(-1))
+
+        predictions = np.concatenate(predictions)
+        labels = np.concatenate(labels)
+
+        predictions = np.argmax(predictions, axis=1)
+
+        f1 = f1_score(labels, predictions, average='weighted')
+        acc_score = accuracy_score(labels, predictions)
+
+        print("Test F1:", f1)
+        print("Binary Acc:", acc_score)
 
 
 if __name__ == "__main__":
