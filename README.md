@@ -1,6 +1,11 @@
 # MultiNLI
 Multi-Genre Natural Language Inference
 
+
+
+## Assignment1
+Implemented the Shortcut-Stacked Sentence Encoders as the baseline model.
+
 ```latex
 @article{nie2017shortcut,
   title={Shortcut-stacked sentence encoders for multi-domain inference},
@@ -10,9 +15,8 @@ Multi-Genre Natural Language Inference
 }
 ```
 
-<!--## 1. Usage-->
 <!--### 1. Requiremnets-->
-<!--python 3.5-->
+<!--python-->
 <!--pytorch-->
 <!--torchtext-->
 <!--spacy english module (https://spacy.io/usage/)-->

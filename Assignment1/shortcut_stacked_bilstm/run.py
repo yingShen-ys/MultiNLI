@@ -2,11 +2,12 @@ from __future__ import print_function
 
 import sys
 
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import accuracy_score
+from tqdm import tqdm
 
 sys.path.append('../../')
 print(sys.path[0])
-
+from Assignment1.shortcut_stacked_bilstm.model.bilstm_classifier import BiLstmClassifier
 from Assignment1.shortcut_stacked_bilstm.model.ssclassifer import SSClassifier
 import argparse
 import numpy as np
@@ -14,7 +15,7 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
+import math
 
 seed = 233
 torch.manual_seed(seed)
@@ -24,7 +25,7 @@ np.random.seed(seed)
 import os
 
 from Assignment1.utils.data_loader import NLIDataloader
-
+from Assignment1.utils.run_utils import evaluate
 
 
 def main(options):
@@ -42,7 +43,6 @@ def main(options):
     gpu_option = options['gpu']
     if gpu_option >= 0:
         USE_GPU = True
-        # torch.set_default_tensor_type('torch.cuda.FloatTensor')
         print("CUDA available, running on gpu ", gpu_option)
     else:
         USE_GPU = False
@@ -57,9 +57,8 @@ def main(options):
     print("Grid search results are in: {}".format(output_path))
 
 
-
     # Set hyperparamters
-    # fixed according to shortcut stacked encoder paper
+    # fixed for now according to shortcut stacked encoder paper
     params = dict()
     params['batch_sz'] = random.choice([32])
     params['lr'] = random.choice([0.0002])
@@ -73,13 +72,17 @@ def main(options):
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
                                                                           gpu_option=gpu_option)
 
-
     # build model
     params["vocab_size"] = len(TEXT_FIELD.vocab)
     params["num_class"] = len(LABEL_FIELD.vocab)
     params["embed_dim"] = embed_dim
 
-    model = SSClassifier(params)
+    if options["model"] == "ssbilstm":
+        model = SSClassifier(params)
+    else:
+        params["lstm_h"] = random.choice([600])
+        model = BiLstmClassifier(params)
+
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
     criterion = nn.CrossEntropyLoss(size_average=False)
@@ -98,11 +101,16 @@ def main(options):
         lr_schedular.step()
         model.train()
         model.zero_grad()
+
         snli_train_iter.init_epoch()
+        snli_val_iter.init_epoch()
+
         print("Epoch {}: learning rate decay to {}".format(e, lr_schedular.get_lr()[0]))
 
         train_loss = 0.0
-        for _, batch in enumerate(snli_train_iter):
+        predictions = []
+        labels = []
+        for batch_idx, batch in enumerate(snli_train_iter):
             model.zero_grad()
 
             premise, premis_lens = batch.premise
@@ -115,13 +123,31 @@ def main(options):
             loss.backward()
             optimizer.step()
 
+            predictions.append(output.cpu().data.numpy())
+            labels.append(label.cpu().data.numpy())
+
+            if batch_idx % 100 == 0:
+                print("Batch {}/{} complete! Average training loss {}".format(batch_idx, len(snli_train_iter), loss.data[0]/ batch.batch_size))
+
         if np.isnan(train_loss):
             print("Training: NaN values happened, rebooting...\n\n")
             complete = False
             break
 
+        predictions = np.concatenate(predictions)
+        labels = np.concatenate(labels)
+
+        predictions = np.argmax(predictions, axis=1)
+        acc_score = accuracy_score(labels, predictions)
+        print("Epoch {} complete! Average Training loss: {}".format(e, train_loss))
+        print("Epoch {} complete! Training Accuracy: {}".format(e, acc_score))
+
+
+
         model.eval()
         valid_loss = 0.0
+        predictions = []
+        labels = []
         for _, batch in enumerate(snli_val_iter):
             premise, premis_lens = batch.premise
             hypothesis, hypothesis_lens = batch.hypothesis
@@ -130,10 +156,21 @@ def main(options):
             loss = criterion(output, label)
             valid_loss += loss.data[0] / len(snli_val_iter)
 
+            predictions.append(output.cpu().data.numpy())
+            labels.append(label.cpu().data.numpy())
+
         if np.isnan(valid_loss):
             print("Training: NaN values happened, rebooting...\n\n")
             complete = False
             break
+
+        predictions = np.concatenate(predictions)
+        labels = np.concatenate(labels)
+
+        predictions = np.argmax(predictions, axis=1)
+        acc_score = accuracy_score(labels, predictions)
+        print("Epoch {} complete! Average Validation loss: {}".format(e, valid_loss))
+        print("Epoch {} complete! Validation Accuracy: {}".format(e, acc_score))
 
         if (valid_loss < min_valid_loss):
             curr_patience = patience
@@ -142,6 +179,9 @@ def main(options):
             print("Found new best model, saving to disk...")
         else:
             curr_patience -= 1
+
+        if curr_patience <= 0:
+            break
 
     if complete:
         best_model = torch.load(model_path)
@@ -158,16 +198,17 @@ def main(options):
             loss = criterion(output, label)
             test_loss += loss.data[0] / len(snli_test_iter)
 
-            predictions.append(output.cpu().data.numpy().reshape(-1))
-            labels.append(label.cpu().data.numpy().reshape(-1))
+            predictions.append(output.cpu().data.numpy())
+            labels.append(label.cpu().data.numpy())
 
         predictions = np.concatenate(predictions)
         labels = np.concatenate(labels)
 
-        predictions = np.argmax(predictions, axis=1)
-
-        f1 = f1_score(labels, predictions, average='weighted')
-        acc_score = accuracy_score(labels, predictions)
+        # predictions = np.argmax(predictions, axis=1)
+        #
+        # f1 = f1_score(labels, predictions, average='weighted')
+        # acc_score = accuracy_score(labels, predictions)
+        f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab)
 
         print("Test F1:", f1)
         print("Binary Acc:", acc_score)
@@ -184,10 +225,11 @@ if __name__ == "__main__":
                          type=str, default='../../data/multinli_1.0/')
     OPTIONS.add_argument('--snli_data_path', dest='snli_data_path',
                          type=str, default='../../data/snli_1.0/')
+    OPTIONS.add_argument('--model', dest='model', default='ssbilstm')
     OPTIONS.add_argument('--model_path', dest='model_path',
-                         type=str, default='models')
+                         type=str, default='saved_model/')
     OPTIONS.add_argument('--output_path', dest='output_path',
-                         type=str, default='results')
+                         type=str, default='results/')
     OPTIONS.add_argument('--gpu', dest='gpu', type=int, default=1)
 
     PARAMS = vars(OPTIONS.parse_args())
