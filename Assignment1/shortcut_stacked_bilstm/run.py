@@ -2,13 +2,12 @@ from __future__ import print_function
 
 import sys
 
-from sklearn.metrics import accuracy_score
-from tqdm import tqdm
 
 sys.path.append('../../')
 print(sys.path[0])
 from Assignment1.shortcut_stacked_bilstm.model.bilstm_classifier import BiLstmClassifier
 from Assignment1.shortcut_stacked_bilstm.model.ssclassifer import SSClassifier
+from sklearn.metrics import accuracy_score
 import argparse
 import numpy as np
 import random
@@ -25,12 +24,13 @@ np.random.seed(seed)
 import os
 
 from Assignment1.utils.data_loader import NLIDataloader
-from Assignment1.utils.run_utils import evaluate
+from Assignment1.utils.run_utils import evaluate, combine_dataset
 
 
 def main(options):
     # parse the input args
     run_id = options['run_id']
+    signature = options['signature']
     epochs = options['epochs']
     patience = options['patience']
     pretained = options['pretained']
@@ -41,21 +41,23 @@ def main(options):
     multinli_path = options['multinli_data_path']
     snli_path = options['snli_data_path']
     gpu_option = options['gpu']
+
     if gpu_option >= 0:
         USE_GPU = True
+        device = None
         print("CUDA available, running on gpu ", gpu_option)
     else:
         USE_GPU = False
+        device = -1
         print("CUDA not available, running on cpu.")
 
     print("Training initializing... Run ID is: {}".format(run_id))
 
     # prepare the paths for storing models and outputs
-    model_path = os.path.join(model_path, "model_{}.pt".format(run_id))
-    output_path = os.path.join(output_path, "results_{}.csv".format(run_id))
+    model_path = os.path.join(model_path, "model_{}_{}.pt".format(signature, run_id))
+    output_path = os.path.join(output_path, "results_{}_{}.csv".format(signature, run_id))
     print("Location for savedl models: {}".format(model_path))
     print("Grid search results are in: {}".format(output_path))
-
 
     # Set hyperparamters
     # fixed for now according to shortcut stacked encoder paper
@@ -68,9 +70,22 @@ def main(options):
     params['mlp_dr'] = random.choice([0.1])
 
     # prepare the datasets
-    snli_train_iter, snli_val_iter, snli_test_iter, TEXT_FIELD, LABEL_FIELD \
+    (snli_train_iter, snli_val_iter, snli_test_iter), \
+    (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
+    TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
-                                                                          gpu_option=gpu_option)
+                                                                          gpu_option=device)
+
+    if options["data"] == "snli":
+        train_iter = snli_train_iter
+        val_iter = snli_val_iter
+        test_iter = snli_test_iter
+    else: # multinli
+        # train_iter = combine_dataset(snli_train_iter, multinli_train_iter)
+        train_iter = multinli_train_iter
+        val_iter = snli_val_iter
+        test_match_iter = multinli_match_iter
+        test_mismatch_iter = multinli_mis_match_iter
 
     # build model
     params["vocab_size"] = len(TEXT_FIELD.vocab)
@@ -93,9 +108,6 @@ def main(options):
     curr_patience = patience
     min_valid_loss = float('Inf')
 
-    print(len(snli_train_iter))
-    print(len(snli_val_iter))
-    print(len(snli_test_iter))
     complete = True
     for e in range(epochs):
         lr_schedular.step()
@@ -110,7 +122,7 @@ def main(options):
         train_loss = 0.0
         predictions = []
         labels = []
-        for batch_idx, batch in enumerate(snli_train_iter):
+        for batch_idx, batch in enumerate(train_iter):
             model.zero_grad()
 
             premise, premis_lens = batch.premise
@@ -119,7 +131,7 @@ def main(options):
 
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
-            train_loss += loss.data[0] / len(snli_train_iter)
+            train_loss += loss.data[0] / len(train_iter)
             loss.backward()
             optimizer.step()
 
@@ -127,7 +139,7 @@ def main(options):
             labels.append(label.cpu().data.numpy())
 
             if batch_idx % 100 == 0:
-                print("Batch {}/{} complete! Average training loss {}".format(batch_idx, len(snli_train_iter), loss.data[0]/ batch.batch_size))
+                print("Batch {}/{} complete! Average training loss {}".format(batch_idx, len(train_iter), loss.data[0]/ batch.batch_size))
 
         if np.isnan(train_loss):
             print("Training: NaN values happened, rebooting...\n\n")
@@ -143,18 +155,17 @@ def main(options):
         print("Epoch {} complete! Training Accuracy: {}".format(e, acc_score))
 
 
-
         model.eval()
         valid_loss = 0.0
         predictions = []
         labels = []
-        for _, batch in enumerate(snli_val_iter):
+        for _, batch in enumerate(val_iter):
             premise, premis_lens = batch.premise
             hypothesis, hypothesis_lens = batch.hypothesis
             label = batch.label
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
-            valid_loss += loss.data[0] / len(snli_val_iter)
+            valid_loss += loss.data[0] / len(val_iter)
 
             predictions.append(output.cpu().data.numpy())
             labels.append(label.cpu().data.numpy())
@@ -189,34 +200,75 @@ def main(options):
         test_loss = 0.0
         predictions = []
         labels = []
-        for _, batch in enumerate(snli_test_iter):
-            premise, premis_lens = batch.premise
-            hypothesis, hypothesis_lens = batch.hypothesis
-            label = batch.label
+        if options["data"] == "snli":
+            for _, batch in enumerate(test_iter):
+                premise, premis_lens = batch.premise
+                hypothesis, hypothesis_lens = batch.hypothesis
+                label = batch.label
 
-            output = best_model(premise=premise, hypothesis=hypothesis)
-            loss = criterion(output, label)
-            test_loss += loss.data[0] / len(snli_test_iter)
+                output = best_model(premise=premise, hypothesis=hypothesis)
+                loss = criterion(output, label)
+                test_loss += loss.data[0] / len(snli_test_iter)
 
-            predictions.append(output.cpu().data.numpy())
-            labels.append(label.cpu().data.numpy())
+                predictions.append(output.cpu().data.numpy())
+                labels.append(label.cpu().data.numpy())
 
-        predictions = np.concatenate(predictions)
-        labels = np.concatenate(labels)
+                predictions = np.concatenate(predictions)
+                labels = np.concatenate(labels)
 
-        # predictions = np.argmax(predictions, axis=1)
-        #
-        # f1 = f1_score(labels, predictions, average='weighted')
-        # acc_score = accuracy_score(labels, predictions)
-        f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab)
+                f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab)
 
-        print("Test F1:", f1)
-        print("Binary Acc:", acc_score)
+                print("Test F1:", f1)
+                print("Binary Acc:", acc_score)
+        else:  # multinli
+            predictions_match = []
+            labels_match = []
+            predictions_mismatch = []
+            labels_mismatch = []
+            for _, batch in enumerate(test_match_iter):
+                premise, premis_lens = batch.premise
+                hypothesis, hypothesis_lens = batch.hypothesis
+                label = batch.label
+
+                output = best_model(premise=premise, hypothesis=hypothesis)
+                loss = criterion(output, label)
+                test_loss += loss.data[0] / len(test_match_iter)
+
+                predictions_match.append(output.cpu().data.numpy())
+                labels_match.append(label.cpu().data.numpy())
+
+            for _, batch in enumerate(test_mismatch_iter):
+                premise, premis_lens = batch.premise
+                hypothesis, hypothesis_lens = batch.hypothesis
+                label = batch.label
+
+                output = best_model(premise=premise, hypothesis=hypothesis)
+                loss = criterion(output, label)
+                test_loss += loss.data[0] / len(test_mismatch_iter)
+
+                predictions_mismatch.append(output.cpu().data.numpy())
+                labels_mismatch.append(label.cpu().data.numpy())
+
+            predictions_match = np.concatenate(predictions_match)
+            labels_match = np.concatenate(labels_match)
+            predictions_mismatch = np.concatenate(predictions_mismatch)
+            labels_mismatch = np.concatenate(labels_mismatch)
+
+            f1_match, acc_score_match = evaluate(predictions_match, labels_match, LABEL_FIELD.vocab, "match_cm.jpg")
+            f1_mismatch, acc_score_mismatch = evaluate(predictions_mismatch, labels_mismatch, LABEL_FIELD.vocab, "mismatch_cm.jpg")
+
+            print("Test match F1:", f1_match)
+            print("Binary match Acc:", acc_score_match)
+
+            print("Test mismatch F1:", f1_mismatch)
+            print("Binary mismatch Acc:", acc_score_mismatch)
+
 
 
 if __name__ == "__main__":
     OPTIONS = argparse.ArgumentParser()
     OPTIONS.add_argument('--run_id', dest='run_id', type=int, default=1)
+    OPTIONS.add_argument('--signature', dest='signature', type=str, default="")
     OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
     OPTIONS.add_argument('--patience', dest='patience', type=int, default=20)
     OPTIONS.add_argument('--pretained', dest='pretained', type=str, default="glove.840B.300d")
@@ -225,6 +277,8 @@ if __name__ == "__main__":
                          type=str, default='../../data/multinli_1.0/')
     OPTIONS.add_argument('--snli_data_path', dest='snli_data_path',
                          type=str, default='../../data/snli_1.0/')
+    # OPTIONS.add_argument('--data', dest='data', default='snli')
+    OPTIONS.add_argument('--data', dest='data', default='multinli')
     OPTIONS.add_argument('--model', dest='model', default='ssbilstm')
     OPTIONS.add_argument('--model_path', dest='model_path',
                          type=str, default='saved_model/')

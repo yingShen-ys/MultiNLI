@@ -33,9 +33,18 @@ class NLIDataloader():
                                                    batch_size=batch_size,
                                                    repeat = False,
                                                    sort_key=lambda x: len(x.premise),
-                                                   device=None)
+                                                   device=gpu_option)
 
-        return snli_train_iter, snli_val_iter, snli_test_iter, TEXT_FIELD, LABEL_FIELD
+        multinli_train_iter, multinli_match_iter, multinli_mis_match_iter \
+            = torchtext.data.BucketIterator.splits(datasets=(multinli_train, multinli_match, multinli_mis_match),
+                                                   batch_size=batch_size,
+                                                   repeat=False,
+                                                   sort_key=lambda x: len(x.premise),
+                                                   device=gpu_option)
+
+        return (snli_train_iter, snli_val_iter, snli_test_iter), \
+               (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
+               TEXT_FIELD, LABEL_FIELD
 
 
     def load_mutidata_json(self, text_field, label_field):
