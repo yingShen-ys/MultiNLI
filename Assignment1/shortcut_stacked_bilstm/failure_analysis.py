@@ -102,6 +102,78 @@ def switch_pre_hypo(options):
     print("Test F1:", f1)
     print("Binary Acc:", acc_score)
 
+def snli_eval(options):
+    # parse the input args
+    run_id = options['run_id']
+    pretained = options['pretained']
+    model_path = options['model_path']
+    multinli_path = options['multinli_data_path']
+    snli_path = options['snli_data_path']
+    gpu_option = options['gpu']
+
+    if gpu_option >= 0:
+        device = None
+        print("CUDA available, running on gpu ", gpu_option)
+    else:
+        device = -1
+        print("CUDA not available, running on cpu.")
+
+    # prepare the paths for loading the models
+    model_path = os.path.join(model_path, "model_{}.pt".format(run_id))
+
+    params = dict()
+    params['batch_sz'] = random.choice([32])
+
+    # prepare the datasets
+    (snli_train_iter, snli_val_iter, snli_test_iter), \
+    (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter), \
+    TEXT_FIELD, LABEL_FIELD \
+        = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
+                                                                          gpu_option=device)
+
+    criterion = nn.CrossEntropyLoss(size_average=False)
+    best_model = torch.load(model_path)
+    best_model.init_weight(TEXT_FIELD.vocab.vectors)
+    best_model.cuda()
+    best_model.eval()
+    test_loss = 0.0
+    predictions = []
+    labels = []
+    label_dict = {i:l for i, l in enumerate(LABEL_FIELD.vocab.itos)}
+    reverse_label_dict = {l:i for i, l in enumerate(LABEL_FIELD.vocab.itos)}
+
+    print("Loaded the model from {}".format(model_path))
+
+    hypothesis_list = []
+    premise_list =[]
+    for _, batch in enumerate(snli_test_iter):
+        premise, premis_lens = batch.premise
+        hypothesis, hypothesis_lens = batch.hypothesis
+        label = batch.label
+        for ex_id in range(hypothesis.size()[0]):
+            hypo = hypothesis[ex_id].cpu().data.numpy()
+            prem = premise[ex_id].cpu().data.numpy()
+            hypothesis_list.append(hypo)
+            premise_list.append(prem)
+
+        output = best_model(premise=premise, hypothesis=hypothesis)
+        loss = criterion(output, label)
+        test_loss += loss.data[0] / len(snli_test_iter)
+
+        predictions.append(output.cpu().data.numpy())
+        labels.append(label.cpu().data.numpy())
+
+    predictions = np.concatenate(predictions)
+    labels = np.concatenate(labels)
+
+    error_cases(predictions, labels, hypothesis_list, premise_list, TEXT_FIELD, label_dict, "snli.csv")
+
+
+    f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab, "snli.jpg")
+
+    print("Test F1:", f1)
+    print("Binary Acc:", acc_score)
+
 
 def multi_eval(options):
     # parse the input args
@@ -229,10 +301,10 @@ def error_cases(predictions, labels, hypothesis_list, premise_list, TEXT_FIELD, 
         prem = [TEXT_FIELD.vocab.itos[w] for w in premise_list[i].tolist()]
         predict = label_dict[predictions[i]]
         label = label_dict[labels[i]]
-        print("Hypothesis:", hypo)
-        print("Premise:", prem)
-        print("Predictions:", predict)
-        print("True label:", label)
+        # print("Hypothesis:", hypo)
+        # print("Premise:", prem)
+        # print("Predictions:", predict)
+        # print("True label:", label)
 
         with open(error_file, 'a+') as out:
             writer = csv.writer(out)
@@ -255,4 +327,5 @@ if __name__ == "__main__":
     OPTIONS.add_argument('--gpu', dest='gpu', type=int, default=1)
 
     PARAMS = vars(OPTIONS.parse_args())
-    multi_eval(PARAMS)
+    # multi_eval(PARAMS)
+    snli_eval(PARAMS)

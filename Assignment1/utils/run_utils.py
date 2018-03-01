@@ -23,19 +23,19 @@ def evaluate(predictions, labels, label_dict, cm_path):
     cm = confusion_matrix(labels, predictions)
     save_confusion_matrix(cm, num_class, label_dict, cm_path)
 
+
+    accs = cm.diagonal()/ cm.sum(axis=1).astype(float)
+    print(accs)
+
     for c in range(num_class):
         label = label_dict.itos[c]
-        print(label)
-        label_idx = np.where(labels == c)
-        acc_score[label] = accuracy_score(labels[label_idx], predictions[label_idx])
-        f1[label] = f1_score(labels[label_idx], predictions[label_idx], average='weighted')
+        acc_score[label] = accs[c]
 
     return f1, acc_score
 
-def save_confusion_matrix(cm, num_classes, label_dict, cm_path, title='Confusion matrix', cmap=plt.cm.Blues):
+def save_confusion_matrix(cm, num_classes, label_dict, cm_path, cmap=plt.cm.Blues):
     fig = plt.figure()
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
-    plt.title(title)
     plt.colorbar()
     tick_marks = np.arange(num_classes)
     classes = [d for d in label_dict.itos]
