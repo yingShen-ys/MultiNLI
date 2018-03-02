@@ -75,6 +75,7 @@ class BiLstmClassifier(nn.Module):
         logging.debug("premise_hidden: {}".format(premise_hidden.size()))
         logging.debug("hypothesis_hidden: {}".format(hypothesis_hidden.size()))
 
+        # [vp:vh:vp-vh:vp*vh]
         m = torch.cat([premise_hidden,
                        hypothesis_hidden,
                        torch.abs(premise_hidden-hypothesis_hidden),

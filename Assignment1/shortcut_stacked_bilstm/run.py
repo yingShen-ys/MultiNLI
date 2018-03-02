@@ -270,7 +270,7 @@ def main(options):
 if __name__ == "__main__":
     OPTIONS = argparse.ArgumentParser()
     OPTIONS.add_argument('--run_id', dest='run_id', type=int, default=1)
-    OPTIONS.add_argument('--signature', dest='signature', type=str, default="")
+    OPTIONS.add_argument('--signature', dest='signature', type=str, default="") # e.g. {model}_{data}
     OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
     OPTIONS.add_argument('--patience', dest='patience', type=int, default=20)
     OPTIONS.add_argument('--pretained', dest='pretained', type=str, default="glove.840B.300d")

@@ -48,6 +48,15 @@ def evaluate(predictions, labels, label_dict, cm_path):
     return f1, acc_score
 
 def save_confusion_matrix(cm, num_classes, label_dict, cm_path, cmap=plt.cm.Blues):
+    """
+    save the confusion matrix figure
+    :param cm:
+    :param num_classes:
+    :param label_dict:
+    :param cm_path:
+    :param cmap:
+    :return:
+    """
     fig = plt.figure()
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.colorbar()
