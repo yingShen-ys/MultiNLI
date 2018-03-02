@@ -1,5 +1,4 @@
 from __future__ import print_function
-
 import sys
 
 
@@ -14,7 +13,6 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import math
 
 seed = 233
 torch.manual_seed(seed)
@@ -76,6 +74,7 @@ def main(options):
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
                                                                           gpu_option=device)
 
+    # pick the training, validation, testing sets
     if options["data"] == "snli":
         train_iter = snli_train_iter
         val_iter = snli_val_iter
@@ -87,17 +86,18 @@ def main(options):
         test_match_iter = multinli_match_iter
         test_mismatch_iter = multinli_mis_match_iter
 
-    # build model
-    params["vocab_size"] = len(TEXT_FIELD.vocab)
-    params["num_class"] = len(LABEL_FIELD.vocab)
-    params["embed_dim"] = embed_dim
 
+    # pick the classification model
     if options["model"] == "ssbilstm":
         model = SSClassifier(params)
     else:
         params["lstm_h"] = random.choice([600])
         model = BiLstmClassifier(params)
 
+    # build model
+    params["vocab_size"] = len(TEXT_FIELD.vocab)
+    params["num_class"] = len(LABEL_FIELD.vocab)
+    params["embed_dim"] = embed_dim
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
     criterion = nn.CrossEntropyLoss(size_average=False)
@@ -108,6 +108,7 @@ def main(options):
     curr_patience = patience
     min_valid_loss = float('Inf')
 
+    # training & validation
     complete = True
     for e in range(epochs):
         lr_schedular.step()
@@ -194,6 +195,7 @@ def main(options):
         if curr_patience <= 0:
             break
 
+    # testing
     if complete:
         best_model = torch.load(model_path)
         best_model.eval()

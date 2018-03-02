@@ -9,10 +9,24 @@ from itertools import chain
 
 
 def combine_dataset(iter1, iter2):
+    """
+    combine two iters
+    :param iter1:
+    :param iter2:
+    :return:
+    """
     for iter_combine in chain(iter1, iter2):
         yield iter_combine
 
 def evaluate(predictions, labels, label_dict, cm_path):
+    """
+    Evaluate the test results, return f1 & acc score, save the confusion matrix figure
+    :param predictions:
+    :param labels:
+    :param label_dict: {index: label_str, ...}
+    :param cm_path: path for saving the confusion matrix figure
+    :return: f1 & acc score
+    """
     num_class = predictions.shape[1]
     predictions = np.argmax(predictions, axis=1)
 

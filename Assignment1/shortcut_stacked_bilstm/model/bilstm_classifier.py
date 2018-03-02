@@ -12,8 +12,16 @@ np.random.seed(seed)
 
 
 class BiLstmClassifier(nn.Module):
-
+    """
+    The bidirectional LSTM classifier with max pooling on the output of the LSTM layer
+    Input: premise, hypothesis
+    Output: probabilities of classes
+    """
     def __init__(self, params):
+        """
+        Define the neural module layers according to params
+        :param params: the parameter setting
+        """
         super(BiLstmClassifier, self).__init__()
 
         self.embeddings = nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"])
@@ -35,9 +43,20 @@ class BiLstmClassifier(nn.Module):
         self.classifer = nn.Linear(params['mlp_h'][-1], params["num_class"])
 
     def init_weight(self, pretrained_embedding):
+        """
+        Initialize the weight for the embedding layer using pretrained_embedding
+        :param pretrained_embedding:
+        :return:
+        """
         self.embeddings.weight = nn.Parameter(pretrained_embedding)
 
     def forward(self, premise, hypothesis):
+        """
+        Forward function
+        :param premise:
+        :param hypothesis:
+        :return:
+        """
 
         logging.debug("{}Embedding Layer{}".format("-" * 10, "-" * 10))
         premise_embed = self.embeddings(premise)
@@ -52,7 +71,7 @@ class BiLstmClassifier(nn.Module):
         hypothesis_out, _ = self.bilstm(hypothesis_embed)
         hypothesis_hidden, _ = torch.max(hypothesis_out, 1)  # reduce seq_len dim
 
-        logging.debug("After BiLSTM:")
+        logging.debug("After BiLSTM Max pooling:")
         logging.debug("premise_hidden: {}".format(premise_hidden.size()))
         logging.debug("hypothesis_hidden: {}".format(hypothesis_hidden.size()))
 
