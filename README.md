@@ -4,6 +4,7 @@ Multi-Genre Natural Language Inference
 
 ### 1. Setup
 Required Library: python3, pytorch, torchtext, spacy
+
 Install torchtext.
 ```sh
 $ pip3 install torchtext
