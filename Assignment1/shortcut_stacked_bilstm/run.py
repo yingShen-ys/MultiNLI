@@ -283,9 +283,9 @@ if __name__ == "__main__":
     OPTIONS.add_argument('--data', dest='data', default='multinli')
     OPTIONS.add_argument('--model', dest='model', default='ssbilstm')
     OPTIONS.add_argument('--model_path', dest='model_path',
-                         type=str, default='saved_model/')
+                         type=str, default='../saved_model/')
     OPTIONS.add_argument('--output_path', dest='output_path',
-                         type=str, default='results/')
+                         type=str, default='../results/')
     OPTIONS.add_argument('--gpu', dest='gpu', type=int, default=1)
 
     PARAMS = vars(OPTIONS.parse_args())
