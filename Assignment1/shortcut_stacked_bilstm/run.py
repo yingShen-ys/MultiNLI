@@ -6,6 +6,7 @@ sys.path.append('../../')
 print(sys.path[0])
 from Assignment1.shortcut_stacked_bilstm.model.bilstm_classifier import BiLstmClassifier
 from Assignment1.shortcut_stacked_bilstm.model.ssclassifer import SSClassifier
+from Assignment1.shortcut_stacked_bilstm.model.ESIM_classifier import ESIM_classifier
 from sklearn.metrics import accuracy_score
 import argparse
 import numpy as np
@@ -60,12 +61,14 @@ def main(options):
     # Set hyperparamters
     # fixed for now according to shortcut stacked encoder paper
     params = dict()
-    params['batch_sz'] = random.choice([32])
+    #params['batch_sz'] = random.choice([32])
+    params['batch_sz'] = random.choice([2])
     params['lr'] = random.choice([0.0002])
     params['lr_decay'] = random.choice([0.5])
     params['lstm_h'] = random.choice([[512, 1024, 2048]])
     params['mlp_h'] = random.choice([[1600]])
     params['mlp_dr'] = random.choice([0.1])
+    params['F_h'] = random.choice([1600])  # for one layer MLP of mapping F in ESIM
 
     # prepare the datasets
     (snli_train_iter, snli_val_iter, snli_test_iter), \
@@ -86,18 +89,24 @@ def main(options):
         test_match_iter = multinli_match_iter
         test_mismatch_iter = multinli_mis_match_iter
 
-
-    # pick the classification model
-    if options["model"] == "ssbilstm":
-        model = SSClassifier(params)
-    else:
-        params["lstm_h"] = random.choice([600])
-        model = BiLstmClassifier(params)
-
     # build model
     params["vocab_size"] = len(TEXT_FIELD.vocab)
     params["num_class"] = len(LABEL_FIELD.vocab)
     params["embed_dim"] = embed_dim
+
+    # pick the classification model
+    if options["model"] == "ssbilstm":
+        print("using shortcut stack classifier")
+        model = SSClassifier(params)
+    elif options["model"] == "esim":
+        print("using ESIM classifier")
+        params["lstm_h"] = random.choice([600])
+        model = ESIM_classifier(params)
+    else:
+        print("using bi-lstm classifier")
+        params["lstm_h"] = random.choice([600])
+        model = BiLstmClassifier(params)
+
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
     criterion = nn.CrossEntropyLoss(size_average=False)
@@ -281,12 +290,12 @@ if __name__ == "__main__":
                          type=str, default='../../data/snli_1.0/')
     # OPTIONS.add_argument('--data', dest='data', default='snli')
     OPTIONS.add_argument('--data', dest='data', default='multinli')
-    OPTIONS.add_argument('--model', dest='model', default='ssbilstm')
+    OPTIONS.add_argument('--model', dest='model', default='esim')
     OPTIONS.add_argument('--model_path', dest='model_path',
                          type=str, default='saved_model/')
     OPTIONS.add_argument('--output_path', dest='output_path',
                          type=str, default='results/')
-    OPTIONS.add_argument('--gpu', dest='gpu', type=int, default=1)
+    OPTIONS.add_argument('--gpu', dest='gpu', type=int, default=-1)
 
     PARAMS = vars(OPTIONS.parse_args())
     main(PARAMS)

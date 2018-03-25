@@ -28,6 +28,7 @@ class NLIDataloader():
         LABEL_FIELD.build_vocab(multinli_train, multinli_match, multinli_mis_match,
                                snli_train, snli_dev, snli_test)
 
+        
         snli_train_iter, snli_val_iter, snli_test_iter \
             = torchtext.data.BucketIterator.splits(datasets=(snli_train, snli_dev, snli_test),
                                                    batch_size=batch_size,
@@ -55,9 +56,12 @@ class NLIDataloader():
         """
 
         train, match, mis_match = torchtext.data.TabularDataset.splits(path=self.multinli_path, format='json',
-                                                                       train='multinli_1.0_train.jsonl',
-                                                                       validation='multinli_1.0_dev_matched.jsonl',
-                                                                       test='multinli_1.0_dev_mismatched.jsonl',
+                                                                       #train='multinli_1.0_train.jsonl',
+                                                                       train='train.jsonl',
+                                                                       #validation='multinli_1.0_dev_matched.jsonl',
+                                                                       validation='train.jsonl',
+                                                                       #test='multinli_1.0_dev_mismatched.jsonl',
+                                                                       test='train.jsonl',
                                                                        fields={'sentence1': ('premise', text_field),
                                                                                'sentence2': ('hypothesis', text_field),
                                                                                'gold_label': ('label', label_field)},
@@ -68,9 +72,12 @@ class NLIDataloader():
 
     def load_snlidata_json(self, text_field, label_field):
         train, dev, test = torchtext.data.TabularDataset.splits(path=self.snli_path, format='json',
-                                                                       train='snli_1.0_train.jsonl',
-                                                                       validation='snli_1.0_dev.jsonl',
-                                                                       test='snli_1.0_test.jsonl',
+                                                                       #train='snli_1.0_train.jsonl',
+                                                                       #validation='snli_1.0_dev.jsonl',
+                                                                       #test='snli_1.0_test.jsonl',
+                                                                       train='train.jsonl',
+                                                                       validation='train.jsonl',
+                                                                       test='train.jsonl',
                                                                        fields={'sentence1': ('premise', text_field),
                                                                                'sentence2': ('hypothesis', text_field),
                                                                                'gold_label': ('label', label_field)},
