@@ -2,7 +2,7 @@ from __future__ import print_function
 import sys
 import os
 
-from .model import ESIMClassifier
+from .model import ESIMClassifier, SSClassifier
 from .model import ESIMTreeClassifier
 from ..utils import NLIDataloader
 from ..utils import evaluate, combine_dataset
@@ -94,6 +94,9 @@ def main(options):
         print("using ESIM classifier")
         params["lstm_h"] = random.choice([600])
         model = ESIMClassifier(params)
+    elif options["model"] == "ssbilstm":
+        print("using shortcut stack classifier")
+        model = SSClassifier(params)
     else:
         print("using ESIM-tree classifier")
         params["lstm_h"] = random.choice([600])
