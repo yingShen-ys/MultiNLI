@@ -2,6 +2,18 @@
 Multi-Genre Natural Language Inference
 
 
+### 1. Setup
+Required Library: python3, pytorch, torchtext, spacy
+
+Install torchtext.
+```sh
+$ pip3 install torchtext
+```
+Install spacy and its english module.
+```sh
+$ pip3 install -U spacy
+$ python3 -m spacy download en
+```
 
 <!--## Assignment1-->
 <!--Implemented the Shortcut-Stacked Sentence Encoders as the baseline model.-->
