@@ -85,6 +85,7 @@ class ESIM_classifier(nn.Module):
 		hypothesis_max, _ = torch.max(hypothesis_infer, 1)
 		premise_v = torch.cat([torch.mean(premise_infer, 1), premise_max], 1)
 		hypothesis_v = torch.cat([torch.mean(hypothesis_infer, 1), hypothesis_max], 1)
+		
 		v = torch.cat([premise_v, hypothesis_v], 1)
 
 		# final classifier
