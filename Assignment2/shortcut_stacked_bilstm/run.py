@@ -227,7 +227,7 @@ def main(options):
                 predictions = np.concatenate(predictions)
                 labels = np.concatenate(labels)
 
-                f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab)
+                f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab, "snli_cm.jpg")
 
                 print("Test F1:", f1)
                 print("Binary Acc:", acc_score)
