@@ -5,8 +5,8 @@ from torch.autograd import Variable
 
 sys.path.append('../../')
 print(sys.path[0])
-from Assignment1.shortcut_stacked_bilstm.model.bilstm_classifier import BiLstmClassifier
-from Assignment1.shortcut_stacked_bilstm.model.ssclassifer import SSClassifier
+from Assignment2.shortcut_stacked_bilstm.model.bilstm_classifier import BiLstmClassifier
+from Assignment2.shortcut_stacked_bilstm.model.ssclassifer import SSClassifier
 from sklearn.metrics import accuracy_score
 import argparse
 import numpy as np
@@ -23,8 +23,8 @@ np.random.seed(seed)
 
 import os
 
-from Assignment1.utils.data_loader import NLIDataloader
-from Assignment1.utils.run_utils import evaluate
+from Assignment2.utils.data_loader import NLIDataloader
+from Assignment2.utils.run_utils import evaluate
 
 def switch_pre_hypo(options):
     # parse the input args
