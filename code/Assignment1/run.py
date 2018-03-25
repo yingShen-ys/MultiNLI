@@ -1,12 +1,12 @@
 from __future__ import print_function
 import sys
+import os
 
+from .model import BiLstmClassifier
+from .model import SSClassifier
+from ..utils import NLIDataloader
+from ..utils import evaluate, combine_dataset
 
-sys.path.append('../../')
-print(sys.path[0])
-from Assignment2.shortcut_stacked_bilstm.model.bilstm_classifier import BiLstmClassifier
-from Assignment2.shortcut_stacked_bilstm.model.ssclassifer import SSClassifier
-from Assignment2.shortcut_stacked_bilstm.model.ESIM_classifier import ESIM_classifier
 from sklearn.metrics import accuracy_score
 import argparse
 import numpy as np
@@ -19,11 +19,6 @@ seed = 233
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 np.random.seed(seed)
-
-import os
-
-from Assignment2.utils.data_loader import NLIDataloader
-from Assignment2.utils.run_utils import evaluate, combine_dataset
 
 
 def main(options):
@@ -98,10 +93,6 @@ def main(options):
     if options["model"] == "ssbilstm":
         print("using shortcut stack classifier")
         model = SSClassifier(params)
-    elif options["model"] == "esim":
-        print("using ESIM classifier")
-        params["lstm_h"] = random.choice([600])
-        model = ESIM_classifier(params)
     else:
         print("using bi-lstm classifier")
         params["lstm_h"] = random.choice([600])
@@ -135,8 +126,8 @@ def main(options):
         for batch_idx, batch in enumerate(train_iter):
             model.zero_grad()
 
-            premise, premis_lens = batch.premise
-            hypothesis, hypothesis_lens = batch.hypothesis
+            premise, _premis_lens = batch.premise
+            hypothesis, _hypothesis_lens = batch.hypothesis
             label = batch.label
 
             output = model(premise=premise, hypothesis=hypothesis)
@@ -170,8 +161,8 @@ def main(options):
         predictions = []
         labels = []
         for _, batch in enumerate(val_iter):
-            premise, premis_lens = batch.premise
-            hypothesis, hypothesis_lens = batch.hypothesis
+            premise, _premis_lens = batch.premise
+            hypothesis, _hypothesis_lens = batch.hypothesis
             label = batch.label
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
@@ -213,8 +204,8 @@ def main(options):
         labels = []
         if options["data"] == "snli":
             for _, batch in enumerate(test_iter):
-                premise, premis_lens = batch.premise
-                hypothesis, hypothesis_lens = batch.hypothesis
+                premise, _premis_lens = batch.premise
+                hypothesis, _hypothesis_lens = batch.hypothesis
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
@@ -237,8 +228,8 @@ def main(options):
             predictions_mismatch = []
             labels_mismatch = []
             for _, batch in enumerate(test_match_iter):
-                premise, premis_lens = batch.premise
-                hypothesis, hypothesis_lens = batch.hypothesis
+                premise, _premis_lens = batch.premise
+                hypothesis, _hypothesis_lens = batch.hypothesis
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
@@ -249,8 +240,8 @@ def main(options):
                 labels_match.append(label.cpu().data.numpy())
 
             for _, batch in enumerate(test_mismatch_iter):
-                premise, premis_lens = batch.premise
-                hypothesis, hypothesis_lens = batch.hypothesis
+                premise, _premis_lens = batch.premise
+                hypothesis, _hypothesis_lens = batch.hypothesis
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
@@ -290,7 +281,7 @@ if __name__ == "__main__":
                          type=str, default='../../data/snli_1.0/')
     # OPTIONS.add_argument('--data', dest='data', default='snli')
     OPTIONS.add_argument('--data', dest='data', default='multinli')
-    OPTIONS.add_argument('--model', dest='model', default='esim')
+    OPTIONS.add_argument('--model', dest='model', default='ssbilstm')
     OPTIONS.add_argument('--model_path', dest='model_path',
                          type=str, default='../saved_model/')
     OPTIONS.add_argument('--output_path', dest='output_path',

@@ -1,12 +1,14 @@
 import csv
 import sys
+import os
 
 from torch.autograd import Variable
 
-sys.path.append('../../')
-print(sys.path[0])
-from Assignment2.shortcut_stacked_bilstm.model.bilstm_classifier import BiLstmClassifier
-from Assignment2.shortcut_stacked_bilstm.model.ssclassifer import SSClassifier
+from .model import ESIMClassifier
+from .model import ESIMTreeClassifier
+from ..utils import NLIDataloader
+from ..utils import evaluate, combine_dataset
+
 from sklearn.metrics import accuracy_score
 import argparse
 import numpy as np
@@ -21,10 +23,6 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 np.random.seed(seed)
 
-import os
-
-from Assignment2.utils.data_loader import NLIDataloader
-from Assignment2.utils.run_utils import evaluate
 
 def switch_pre_hypo(options):
     # parse the input args
@@ -49,8 +47,8 @@ def switch_pre_hypo(options):
     params['batch_sz'] = random.choice([32])
 
     # prepare the datasets
-    (snli_train_iter, snli_val_iter, snli_test_iter), \
-    (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter), \
+    (_snli_train_iter, _snli_val_iter, snli_test_iter), \
+    (_multinli_train_iter, _multinli_match_iter, _multinli_mis_match_iter), \
     TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
                                                                           gpu_option=device)
@@ -64,17 +62,17 @@ def switch_pre_hypo(options):
     predictions = []
     labels = []
     label_dict = {i:l for i, l in enumerate(LABEL_FIELD.vocab.itos)}
-    reverse_label_dict = {l:i for i, l in enumerate(LABEL_FIELD.vocab.itos)}
+    # reverse_label_dict = {l:i for i, l in enumerate(LABEL_FIELD.vocab.itos)}
 
     print("Loaded the model from {}".format(model_path))
 
     hypothesis_list = []
     premise_list =[]
     for _, batch in enumerate(snli_test_iter):
-        premise, premis_lens = batch.premise
-        hypothesis, hypothesis_lens = batch.hypothesis
+        premise, _premis_lens = batch.premise
+        hypothesis, _hypothesis_lens = batch.hypothesis
         label = batch.label
-        switch_label = batch.label.cpu().data.numpy()
+        # switch_label = batch.label.cpu().data.numpy()
         for ex_id in range(hypothesis.size()[0]):
             hypo = hypothesis[ex_id].cpu().data.numpy()
             prem = premise[ex_id].cpu().data.numpy()
@@ -94,10 +92,10 @@ def switch_pre_hypo(options):
     predictions = np.concatenate(predictions)
     labels = np.concatenate(labels)
 
-    error_cases(predictions, labels, hypothesis_list, premise_list, TEXT_FIELD, label_dict)
+    error_cases(predictions, labels, hypothesis_list, premise_list, TEXT_FIELD, label_dict, "temp.txt")
 
 
-    f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab)
+    f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab, "temp.jpg")
 
     print("Test F1:", f1)
     print("Binary Acc:", acc_score)
@@ -125,8 +123,8 @@ def snli_eval(options):
     params['batch_sz'] = random.choice([32])
 
     # prepare the datasets
-    (snli_train_iter, snli_val_iter, snli_test_iter), \
-    (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter), \
+    (_snli_train_iter, _snli_val_iter, snli_test_iter), \
+    (_multinli_train_iter, _multinli_match_iter, _multinli_mis_match_iter), \
     TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
                                                                           gpu_option=device)
@@ -140,15 +138,15 @@ def snli_eval(options):
     predictions = []
     labels = []
     label_dict = {i:l for i, l in enumerate(LABEL_FIELD.vocab.itos)}
-    reverse_label_dict = {l:i for i, l in enumerate(LABEL_FIELD.vocab.itos)}
+    # reverse_label_dict = {l:i for i, l in enumerate(LABEL_FIELD.vocab.itos)}
 
     print("Loaded the model from {}".format(model_path))
 
     hypothesis_list = []
     premise_list =[]
     for _, batch in enumerate(snli_test_iter):
-        premise, premis_lens = batch.premise
-        hypothesis, hypothesis_lens = batch.hypothesis
+        premise, _premis_lens = batch.premise
+        hypothesis, _hypothesis_lens = batch.hypothesis
         label = batch.label
         for ex_id in range(hypothesis.size()[0]):
             hypo = hypothesis[ex_id].cpu().data.numpy()
@@ -199,8 +197,8 @@ def multi_eval(options):
     params['batch_sz'] = random.choice([32])
 
     # prepare the datasets
-    (snli_train_iter, snli_val_iter, snli_test_iter), \
-    (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter), \
+    (_snli_train_iter, _snli_val_iter, _snli_test_iter), \
+    (_multinli_train_iter, multinli_match_iter, multinli_mis_match_iter), \
     TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
                                                                           gpu_option=device)
@@ -211,7 +209,7 @@ def multi_eval(options):
     test_loss = 0.0
 
     label_dict = {i:l for i, l in enumerate(LABEL_FIELD.vocab.itos)}
-    reverse_label_dict = {l:i for i, l in enumerate(LABEL_FIELD.vocab.itos)}
+    # reverse_label_dict = {l:i for i, l in enumerate(LABEL_FIELD.vocab.itos)}
 
     print("Loaded the model from {}".format(model_path))
 
@@ -220,10 +218,10 @@ def multi_eval(options):
     hypothesis_list = []
     premise_list =[]
     for _, batch in enumerate(multinli_match_iter):
-        premise, premis_lens = batch.premise
-        hypothesis, hypothesis_lens = batch.hypothesis
+        premise, _premis_lens = batch.premise
+        hypothesis, _hypothesis_lens = batch.hypothesis
         label = batch.label
-        switch_label = batch.label.cpu().data.numpy()
+        # switch_label = batch.label.cpu().data.numpy()
         for ex_id in range(hypothesis.size()[0]):
             hypo = hypothesis[ex_id].cpu().data.numpy()
             prem = premise[ex_id].cpu().data.numpy()
@@ -256,10 +254,10 @@ def multi_eval(options):
     predictions = []
     labels = []
     for _, batch in enumerate(multinli_mis_match_iter):
-        premise, premis_lens = batch.premise
-        hypothesis, hypothesis_lens = batch.hypothesis
+        premise, _premis_lens = batch.premise
+        hypothesis, _hypothesis_lens = batch.hypothesis
         label = batch.label
-        switch_label = batch.label.cpu().data.numpy()
+        # switch_label = batch.label.cpu().data.numpy()
         for ex_id in range(hypothesis.size()[0]):
             hypo = hypothesis[ex_id].cpu().data.numpy()
             prem = premise[ex_id].cpu().data.numpy()

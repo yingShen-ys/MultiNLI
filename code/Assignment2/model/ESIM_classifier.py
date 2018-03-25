@@ -8,7 +8,7 @@ torch.cuda.manual_seed(seed)
 np.random.seed(seed)
 
 
-class ESIM_classifier(nn.Module):
+class ESIMClassifier(nn.Module):
 	"""
 	The ESIM Classifier
 	Input: premise, hypothesis
@@ -16,7 +16,7 @@ class ESIM_classifier(nn.Module):
 	"""
 	def __init__(self, params):
 
-		super(ESIM_classifier, self).__init__()
+		super(ESIMClassifier, self).__init__()
 
 		self.embeddings = nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"])
 		self.bilstm_encoding = nn.LSTM(input_size=params["embed_dim"], hidden_size=params["lstm_h"], batch_first=True, bidirectional=True)
