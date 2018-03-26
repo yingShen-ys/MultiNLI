@@ -143,3 +143,13 @@ class ESIMTreeClassifier(nn.Module):
 
     def __init__(self, params):
         super(ESIMTreeClassifier, self).__init__()
+        self.embedding = nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"])
+        self.encoder = TreeLSTM(params["embed_dim"], params["lstm_h"])
+        self.compressor = nn.Sequential(nn.Linear(params["lstm_h"] * 8, params['F_h']), nn.ReLU(), nn.Dropout(params['mlp_dr']))
+        self.inferer = TreeLSTM(params["F_h"], params["lstm_h"])
+        self.classifier = nn.Sequential(nn.Linear(params["lstm_h"] * 8, params['num_class']), nn.Tanh(), nn.Dropout(params['mlp_dr']))
+
+    def reset_parameters(self, pretrained_embedding):
+        self.embedding.weight = Parameter(pretrained_embedding)
+
+    def forward(self, premise, hypothesis):
