@@ -210,6 +210,6 @@ class ESIMTreeClassifier(nn.Module):
         v = torch.cat([premise_v, hypothesis_v], 1)
 
         # final classifier
-        prediction = self.final_mlp(v)
+        prediction = self.classifier(v)
 
         return prediction
