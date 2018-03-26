@@ -89,14 +89,8 @@ def main(options):
     params["num_class"] = len(LABEL_FIELD.vocab)
     params["embed_dim"] = embed_dim
 
-    # pick the classification model
-    if options["model"] == "ssbilstm":
-        print("using shortcut stack classifier")
-        model = SSClassifier(params)
-    else:
-        print("using bi-lstm classifier")
-        params["lstm_h"] = random.choice([600])
-        model = BiLstmClassifier(params)
+    params["lstm_h"] = random.choice([600])
+    model = BiLstmClassifier(params)
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")

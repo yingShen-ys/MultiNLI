@@ -6,7 +6,14 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from itertools import chain
+import json
 
+config_root = "../config/"
+
+def load_param(model_name):
+    with open(config_root + model_name + ".json", 'r') as f:
+        config = json.load(f)
+    return config
 
 def combine_dataset(iter1, iter2):
     """
