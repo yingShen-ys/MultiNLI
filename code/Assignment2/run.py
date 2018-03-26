@@ -56,9 +56,8 @@ def main(options):
     # Set hyperparamters
     # fixed for now according to shortcut stacked encoder paper
     params = dict()
-    #params['batch_sz'] = random.choice([32])
-    params['batch_sz'] = random.choice([2])
-    params['lr'] = random.choice([0.0002])
+    params['batch_sz'] = random.choice([32])
+    params['lr'] = random.choice([0.0004])
     params['lr_decay'] = random.choice([0.5])
     params['lstm_h'] = random.choice([[512, 1024, 2048]])
     params['mlp_h'] = random.choice([[1600]])
@@ -267,13 +266,12 @@ def main(options):
             print("Binary mismatch Acc:", acc_score_mismatch)
 
 
-
 if __name__ == "__main__":
     OPTIONS = argparse.ArgumentParser()
     OPTIONS.add_argument('--run_id', dest='run_id', type=int, default=1)
     OPTIONS.add_argument('--signature', dest='signature', type=str, default="") # e.g. {model}_{data}
-    OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
-    OPTIONS.add_argument('--patience', dest='patience', type=int, default=20)
+    OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=5000)
+    OPTIONS.add_argument('--patience', dest='patience', type=int, default=7)
     OPTIONS.add_argument('--pretained', dest='pretained', type=str, default="glove.840B.300d")
     OPTIONS.add_argument('--embedding_dim', dest='embedding_dim', type=int, default=300)
     OPTIONS.add_argument('--multinli_data_path', dest='multinli_data_path',
