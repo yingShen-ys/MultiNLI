@@ -2,10 +2,14 @@ from __future__ import print_function
 import sys
 import os
 
-from .model import ESIMClassifier
-from .model import ESIMTreeClassifier
-from ..utils import NLIDataloader
-from ..utils import evaluate, combine_dataset
+sys.path.append("../")
+
+# from code.utils import load_param
+
+from model import ESIMClassifier, SSClassifier
+from model import ESIMTreeClassifier
+from utils import NLIDataloader
+from utils import evaluate, combine_dataset, load_param
 
 from sklearn.metrics import accuracy_score
 import argparse
@@ -27,8 +31,6 @@ def main(options):
     signature = options['signature']
     epochs = options['epochs']
     patience = options['patience']
-    pretained = options['pretained']
-    embed_dim = options['embedding_dim']
 
     model_path = options['model_path']
     output_path = options['output_path']
@@ -53,24 +55,15 @@ def main(options):
     print("Location for savedl models: {}".format(model_path))
     print("Grid search results are in: {}".format(output_path))
 
-    # Set hyperparamters
-    # fixed for now according to shortcut stacked encoder paper
-    params = dict()
-    #params['batch_sz'] = random.choice([32])
-    params['batch_sz'] = random.choice([2])
-    params['lr'] = random.choice([0.0002])
-    params['lr_decay'] = random.choice([0.5])
-    params['lstm_h'] = random.choice([[512, 1024, 2048]])
-    params['mlp_h'] = random.choice([[1600]])
-    params['mlp_dr'] = random.choice([0.1])
-    params['F_h'] = random.choice([1600])  # for one layer MLP of mapping F in ESIM
+    # load hyperparamters
+    config = load_param(options["model"])
 
     # prepare the datasets
     (snli_train_iter, snli_val_iter, snli_test_iter), \
     (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
     TEXT_FIELD, LABEL_FIELD \
-        = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
-                                                                          gpu_option=device)
+        = NLIDataloader(multinli_path, snli_path, config["pretained"]).load_nlidata(batch_size=config["batch_sz"],
+                                                                                    gpu_option=device)
 
     # pick the training, validation, testing sets
     if options["data"] == "snli":
@@ -85,27 +78,29 @@ def main(options):
         test_mismatch_iter = multinli_mis_match_iter
 
     # build model
-    params["vocab_size"] = len(TEXT_FIELD.vocab)
-    params["num_class"] = len(LABEL_FIELD.vocab)
-    params["embed_dim"] = embed_dim
+    config["vocab_size"] = len(TEXT_FIELD.vocab)
+    config["num_class"] = len(LABEL_FIELD.vocab)
 
     # pick the classification model
     if options["model"] == "esim":
         print("using ESIM classifier")
-        params["lstm_h"] = random.choice([600])
-        model = ESIMClassifier(params)
+        # config["lstm_h"] = random.choice([600])
+        model = ESIMClassifier(config)
+    elif options["model"] == "ssbilstm":
+        print("using shortcut stack classifier")
+        model = SSClassifier(config)
     else:
         print("using ESIM-tree classifier")
-        params["lstm_h"] = random.choice([600])
-        model = ESIMTreeClassifier(params)
+        # config["lstm_h"] = random.choice([600])
+        model = ESIMTreeClassifier(config)
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
     criterion = nn.CrossEntropyLoss(size_average=False)
     if USE_GPU:
         model.cuda()
-    optimizer = optim.Adam(params=model.parameters(), lr=params['lr'])
-    lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=params['lr_decay'])
+    optimizer = optim.Adam(params=model.parameters(), lr=config['lr'])
+    lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=config['lr_decay'])
     curr_patience = patience
     min_valid_loss = float('Inf')
 
@@ -267,22 +262,20 @@ def main(options):
             print("Binary mismatch Acc:", acc_score_mismatch)
 
 
-
 if __name__ == "__main__":
     OPTIONS = argparse.ArgumentParser()
     OPTIONS.add_argument('--run_id', dest='run_id', type=int, default=1)
     OPTIONS.add_argument('--signature', dest='signature', type=str, default="") # e.g. {model}_{data}
+
     OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
     OPTIONS.add_argument('--patience', dest='patience', type=int, default=20)
-    OPTIONS.add_argument('--pretained', dest='pretained', type=str, default="glove.840B.300d")
-    OPTIONS.add_argument('--embedding_dim', dest='embedding_dim', type=int, default=300)
     OPTIONS.add_argument('--multinli_data_path', dest='multinli_data_path',
                          type=str, default='../../data/multinli_1.0/')
     OPTIONS.add_argument('--snli_data_path', dest='snli_data_path',
                          type=str, default='../../data/snli_1.0/')
     # OPTIONS.add_argument('--data', dest='data', default='snli')
-    OPTIONS.add_argument('--data', dest='data', default='multinli')
-    OPTIONS.add_argument('--model', dest='model', default='esim')
+    OPTIONS.add_argument('--data', dest='data', default='snli')
+    OPTIONS.add_argument('--model', dest='model', default='ssbilstm')
     OPTIONS.add_argument('--model_path', dest='model_path',
                          type=str, default='../saved_model/')
     OPTIONS.add_argument('--output_path', dest='output_path',
