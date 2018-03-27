@@ -3,12 +3,11 @@ import sys
 import os
 
 
-
 sys.path.append("..")
-from model import *
-# from model.ESIM_classifier import ESIMClassifier
-# from model.ESIM_tree import ESIMTreeClassifier
-# from model.ssclassifier import SSClassifier
+# from model import *
+from model.ESIM_classifier import ESIMClassifier
+from model.ESIM_tree import ESIMTreeClassifier
+from model.ssclassifier import SSClassifier
 from utils import NLIDataloader
 from utils import evaluate, combine_dataset, load_param
 
@@ -60,12 +59,18 @@ def main(options):
     # load hyperparamters
     config = load_param(options["model"])
 
+    # pick tokenizer method
+    if options["model"] == "ssbilstm":
+        tokenizer_method = 'spacy'
+    else:
+        tokenizer_method =' '
+
     # prepare the datasets
     (snli_train_iter, snli_val_iter, snli_test_iter), \
     (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
     TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, config["pretained"]).load_nlidata(batch_size=config["batch_sz"],
-                                                                                    gpu_option=device)
+                                                                                    gpu_option=device, tokenizer=tokenizer_method)
 
     # pick the training, validation, testing sets
     if options["data"] == "snli":
@@ -86,7 +91,6 @@ def main(options):
     # pick the classification model
     if options["model"] == "esim":
         print("using ESIM classifier")
-        # config["lstm_h"] = random.choice([600])
         model = ESIMClassifier(config)
     elif options["model"] == "ssbilstm":
         print("using shortcut stack classifier")
@@ -94,7 +98,6 @@ def main(options):
     else:
         print("using ESIM-tree classifier")
         options["model"] = "esim_tree"
-        # config["lstm_h"] = random.choice([600])
         model = ESIMTreeClassifier(config)
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
@@ -102,6 +105,7 @@ def main(options):
     criterion = nn.CrossEntropyLoss(size_average=False)
     if USE_GPU:
         model.cuda()
+
     optimizer = optim.Adam(params=model.parameters(), lr=config['lr'])
     lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=config['lr_decay'])
     curr_patience = patience

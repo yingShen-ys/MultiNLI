@@ -18,23 +18,20 @@ class ESIMClassifier(nn.Module):
 
 		super(ESIMClassifier, self).__init__()
 
-		self.embeddings = nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"])
+		self.embeddings = nn.Sequential(nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"]),
+										nn.Dropout(params['mlp_dr']))
 		self.bilstm_encoding = nn.LSTM(input_size=params["embed_dim"], hidden_size=params["lstm_h"], batch_first=True, bidirectional=True)
-
 		input_size = params['lstm_h'] * 8
 		self.mapping = nn.Sequential(nn.Linear(input_size, params['F_h']),
 									 nn.ReLU(),
 									 nn.Dropout(params['mlp_dr']))
-
 		self.bilstm_infer = nn.LSTM(input_size=params['F_h'], hidden_size=params['lstm_h'], batch_first=True, bidirectional=True)
-
-		self.final_mlp = nn.Sequential(nn.Linear(input_size, params['lstm_h']),
+		self.final_mlp = nn.Sequential(nn.Dropout(params['mlp_dr']),
+									   nn.Linear(input_size, params['lstm_h']),
 									   nn.Tanh(),
 									   nn.Dropout(params['mlp_dr']))
-
 		self.softmax_layer = nn.Sequential(nn.Linear(params['lstm_h'], params['num_class']),
 										   nn.Softmax())
-
 
 	def init_weight(self, pretrained_embedding):
 		"""
@@ -59,20 +56,26 @@ class ESIMClassifier(nn.Module):
 		hypothesis_out, _ = self.bilstm_encoding(hypothesis_embed)
 
 		# Local Inference Modeling
-		e_matrix = torch.exp(torch.matmul(premise_out, torch.transpose(hypothesis_out, 1, 2)))
-		premise_w = torch.div(e_matrix, torch.sum(e_matrix, 2, True))
-		hypothesis_w = torch.div(e_matrix, torch.sum(e_matrix, 1, True))
+		e_matrix = torch.matmul(premise_out, torch.transpose(hypothesis_out, 1, 2))
 
-		premise_tilde = torch.matmul(premise_w, hypothesis_out)
-		hypothesis_tilde = torch.matmul(torch.transpose(hypothesis_w, 1, 2), premise_out)
+		e_max_1, _ = torch.max(e_matrix, 1, keepdim=True)
+		e_max_2, _ = torch.max(e_matrix, 2, keepdim=True)
+		e_matrix_1 = torch.exp(e_matrix - e_max_1)
+		e_matrix_2 = torch.exp(e_matrix - e_max_2)
+
+		w_2 = torch.div(e_matrix_2, torch.sum(e_matrix_2, 2, True)) # premise_w
+		w_1 = torch.div(e_matrix_1, torch.sum(e_matrix_1, 1, True)) # hypothesis_w
+
+		premise_tilde = torch.matmul(w_2, hypothesis_out)
+		hypothesis_tilde = torch.matmul(torch.transpose(w_1, 1, 2), premise_out)
 
 		premise_m = torch.cat([premise_out,
 							   premise_tilde,
-							   torch.abs(premise_out - premise_tilde),
+							   premise_out - premise_tilde,
 							   torch.mul(premise_out, premise_tilde)], 2)
 		hypothesis_m = torch.cat([hypothesis_out,
 								  hypothesis_tilde,
-								  torch.abs(hypothesis_out - hypothesis_tilde),
+								  hypothesis_out - hypothesis_tilde,
 								  torch.mul(hypothesis_out, hypothesis_tilde)], 2)
 
 		# ReLU mapping to reduce complexity
