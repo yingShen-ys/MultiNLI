@@ -164,8 +164,12 @@ def main(options):
         predictions = []
         labels = []
         for _, batch in enumerate(val_iter):
-            premise, _premis_lens = batch.premise
-            hypothesis, _hypothesis_lens = batch.hypothesis
+            if options["model"] != "esim_tree":
+                premise, _premis_lens = batch.premise
+                hypothesis, _hypothesis_lens = batch.hypothesis
+            else:
+                premise, _ = batch.premise_parse
+                hypothesis, _ = batch.hypothesis_parse
             label = batch.label
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
@@ -207,8 +211,12 @@ def main(options):
         labels = []
         if options["data"] == "snli":
             for _, batch in enumerate(test_iter):
-                premise, _premis_lens = batch.premise
-                hypothesis, _hypothesis_lens = batch.hypothesis
+                if options["model"] != "esim_tree":
+                    premise, _premis_lens = batch.premise
+                    hypothesis, _hypothesis_lens = batch.hypothesis
+                else:
+                    premise, _ = batch.premise_parse
+                    hypothesis, _ = batch.hypothesis_parse
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
@@ -231,8 +239,12 @@ def main(options):
             predictions_mismatch = []
             labels_mismatch = []
             for _, batch in enumerate(test_match_iter):
-                premise, _premis_lens = batch.premise
-                hypothesis, _hypothesis_lens = batch.hypothesis
+                if options["model"] != "esim_tree":
+                    premise, _premis_lens = batch.premise
+                    hypothesis, _hypothesis_lens = batch.hypothesis
+                else:
+                    premise, _ = batch.premise_parse
+                    hypothesis, _ = batch.hypothesis_parse
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
@@ -243,8 +255,12 @@ def main(options):
                 labels_match.append(label.cpu().data.numpy())
 
             for _, batch in enumerate(test_mismatch_iter):
-                premise, _premis_lens = batch.premise
-                hypothesis, _hypothesis_lens = batch.hypothesis
+                if options["model"] != "esim_tree":
+                    premise, _premis_lens = batch.premise
+                    hypothesis, _hypothesis_lens = batch.hypothesis
+                else:
+                    premise, _ = batch.premise_parse
+                    hypothesis, _ = batch.hypothesis_parse
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
