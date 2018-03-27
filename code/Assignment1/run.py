@@ -3,7 +3,6 @@ import sys
 import os
 
 from .model import BiLstmClassifier
-from .model import SSClassifier
 from ..utils import NLIDataloader
 from ..utils import evaluate, combine_dataset
 

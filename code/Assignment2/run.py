@@ -4,12 +4,11 @@ import os
 
 sys.path.append("../")
 
-# from code.utils import load_param
 
-from model import ESIMClassifier, SSClassifier
-from model import ESIMTreeClassifier
 from utils import NLIDataloader
 from utils import evaluate, combine_dataset, load_param
+from model import ESIMClassifier, SSClassifier
+from model import ESIMTreeClassifier
 
 from sklearn.metrics import accuracy_score
 import argparse
