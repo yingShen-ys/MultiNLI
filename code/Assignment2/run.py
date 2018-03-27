@@ -91,7 +91,7 @@ def main(options):
         model = SSClassifier(config)
     else:
         print("using ESIM-tree classifier")
-        options["model"] == "esim_tree"
+        options["model"] = "esim_tree"
         # config["lstm_h"] = random.choice([600])
         model = ESIMTreeClassifier(config)
 
