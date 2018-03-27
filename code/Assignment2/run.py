@@ -90,6 +90,7 @@ def main(options):
         model = SSClassifier(config)
     else:
         print("using ESIM-tree classifier")
+        options["model"] = "esim_tree"
         # config["lstm_h"] = random.choice([600])
         model = ESIMTreeClassifier(config)
 
@@ -120,15 +121,21 @@ def main(options):
         labels = []
         for batch_idx, batch in enumerate(train_iter):
             model.zero_grad()
-
-            premise, _premis_lens = batch.premise
-            hypothesis, _hypothesis_lens = batch.hypothesis
+            
+            if options["model"] != "esim_tree":
+                premise, _premis_lens = batch.premise
+                hypothesis, _hypothesis_lens = batch.hypothesis
+            else:
+                premise, _ = batch.premise_parse
+                hypothesis, _ = batch.hypothesis_parse
             label = batch.label
 
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
             train_loss += loss.data[0] / len(train_iter)
+
             loss.backward()
+            nn.utils.clip_grad_norm(model.parameters(), config['clip_c'])
             optimizer.step()
 
             predictions.append(output.cpu().data.numpy())
@@ -156,8 +163,12 @@ def main(options):
         predictions = []
         labels = []
         for _, batch in enumerate(val_iter):
-            premise, _premis_lens = batch.premise
-            hypothesis, _hypothesis_lens = batch.hypothesis
+            if options["model"] != "esim_tree":
+                premise, _premis_lens = batch.premise
+                hypothesis, _hypothesis_lens = batch.hypothesis
+            else:
+                premise, _ = batch.premise_parse
+                hypothesis, _ = batch.hypothesis_parse
             label = batch.label
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
@@ -199,8 +210,12 @@ def main(options):
         labels = []
         if options["data"] == "snli":
             for _, batch in enumerate(test_iter):
-                premise, _premis_lens = batch.premise
-                hypothesis, _hypothesis_lens = batch.hypothesis
+                if options["model"] != "esim_tree":
+                    premise, _premis_lens = batch.premise
+                    hypothesis, _hypothesis_lens = batch.hypothesis
+                else:
+                    premise, _ = batch.premise_parse
+                    hypothesis, _ = batch.hypothesis_parse
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
@@ -223,8 +238,12 @@ def main(options):
             predictions_mismatch = []
             labels_mismatch = []
             for _, batch in enumerate(test_match_iter):
-                premise, _premis_lens = batch.premise
-                hypothesis, _hypothesis_lens = batch.hypothesis
+                if options["model"] != "esim_tree":
+                    premise, _premis_lens = batch.premise
+                    hypothesis, _hypothesis_lens = batch.hypothesis
+                else:
+                    premise, _ = batch.premise_parse
+                    hypothesis, _ = batch.hypothesis_parse
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
@@ -235,8 +254,12 @@ def main(options):
                 labels_match.append(label.cpu().data.numpy())
 
             for _, batch in enumerate(test_mismatch_iter):
-                premise, _premis_lens = batch.premise
-                hypothesis, _hypothesis_lens = batch.hypothesis
+                if options["model"] != "esim_tree":
+                    premise, _premis_lens = batch.premise
+                    hypothesis, _hypothesis_lens = batch.hypothesis
+                else:
+                    premise, _ = batch.premise_parse
+                    hypothesis, _ = batch.hypothesis_parse
                 label = batch.label
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
@@ -261,11 +284,11 @@ def main(options):
             print("Binary mismatch Acc:", acc_score_mismatch)
 
 
-
 if __name__ == "__main__":
     OPTIONS = argparse.ArgumentParser()
     OPTIONS.add_argument('--run_id', dest='run_id', type=int, default=1)
     OPTIONS.add_argument('--signature', dest='signature', type=str, default="") # e.g. {model}_{data}
+
     OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
     OPTIONS.add_argument('--patience', dest='patience', type=int, default=20)
     OPTIONS.add_argument('--multinli_data_path', dest='multinli_data_path',
@@ -273,8 +296,8 @@ if __name__ == "__main__":
     OPTIONS.add_argument('--snli_data_path', dest='snli_data_path',
                          type=str, default='../../data/snli_1.0/')
     # OPTIONS.add_argument('--data', dest='data', default='snli')
-    OPTIONS.add_argument('--data', dest='data', default='multinli')
-    OPTIONS.add_argument('--model', dest='model', default='ssbilstm')
+    OPTIONS.add_argument('--data', dest='data', default='snli')
+    OPTIONS.add_argument('--model', dest='model', default='esim')
     OPTIONS.add_argument('--model_path', dest='model_path',
                          type=str, default='../saved_model/')
     OPTIONS.add_argument('--output_path', dest='output_path',

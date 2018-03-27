@@ -4,6 +4,7 @@ import logging
 import torch
 import numpy as np
 import torch.nn as nn
+from torch.nn import functional as F
 
 seed = 233
 torch.manual_seed(seed)
@@ -95,7 +96,7 @@ class SSClassifier(nn.Module):
 
         logging.debug("{}Classifier stage{}".format("-" * 10, "-" * 10))
         linear = self.mlps(m)
-        prediction = self.classifer(linear)
+        prediction = F.softmax(self.classifer(linear))
         logging.debug("{}Classifier stage{}".format("-" * 10, "-" * 10))
 
 
