@@ -105,14 +105,14 @@ class TreeLSTM(nn.Module):
         super(TreeLSTM, self).__init__()
         self.in_features = in_features
         self.hidden_size = hidden_size
-        self.stack = [] # the processing of the tree is stack-based
         self.cell = TreeLSTMCell(in_features, hidden_size)
 
     def forward(self, input, tree):
         '''
         input is all the embedding vectors (hence variables), tree is the list of all token indices
         '''
-        is_cuda = next(self.cell.parameters()).is_cuda()
+        stack = []
+        is_cuda = next(self.cell.parameters()).is_cuda
         states = [] # a place holder for storing all node states
         right_bracket_token = tree[0, -1] # the last token must be right_bracket
 
@@ -126,17 +126,18 @@ class TreeLSTM(nn.Module):
                 init_left_state = [Variable(torch.zeros(self.hidden_size).type(FloatTensor), requires_grad=False) for _ in range(2)]
                 init_right_state = [Variable(torch.zeros(self.hidden_size).type(FloatTensor), requires_grad=False) for _ in range(2)]
                 node_state = self.cell(val, init_left_state, init_right_state)
-                self.stack.append(node_state)
+                stack.append(node_state)
             else:
-                right_state = self.stack.pop()
-                left_state = self.stack.pop()
+                right_state = stack.pop()
+                left_state = stack.pop()
                 node_state = self.cell(val, left_state, right_state)
-                self.stack.append(node_state)
+                stack.append(node_state)
+            print(len(stack))
             states.append(node_state[0]) # only append hidden states
         states = torch.cat(states) # (num_nodes, hidden_size)
 
-        assert len(self.stack) == 1 # if this is wrong then something must be off
-        return self.stack[0][0], states
+        assert len(stack) == 1 # if this is wrong then something must be off
+        return stack[0][0], states
 
 
 class ESIMTreeClassifier(nn.Module):
@@ -156,20 +157,21 @@ class ESIMTreeClassifier(nn.Module):
         self.encoder = TreeLSTM(params["embed_dim"], params["lstm_h"])
         self.compressor = nn.Sequential(nn.Linear(params["lstm_h"] * 8, params['F_h']), nn.ReLU(), nn.Dropout(params['mlp_dr']))
         self.inferer = TreeLSTM(params["F_h"], params["lstm_h"])
-        self.classifier = nn.Sequential(nn.Linear(params["lstm_h"] * 8, params['num_class']), nn.Tanh(), nn.Dropout(params['mlp_dr']))
+        self.classifier = nn.Sequential(nn.Linear(params["lstm_h"] * 9, params['num_class']), nn.Tanh(), nn.Dropout(params['mlp_dr']))
+        self.softmax_layer = nn.Sequential(nn.Linear(params['lstm_h'], params['num_class']), nn.Softmax)
 
-    def reset_parameters(self, pretrained_embedding):
+    def init_weight(self, pretrained_embedding):
         self.embedding.weight = Parameter(pretrained_embedding)
 
 
-    def forward(self, premise_parse, hypothesis_parse):
-        left_bracket_token = premise_parse[0, 0] # the first token must be left_bracket
-        premise_mask = premise_parse != left_bracket_token
-        hypothesis_mask = hypothesis_parse != left_bracket_token
+    def forward(self, premise, hypothesis):
+        left_bracket_token = premise[0, 0] # the first token must be left_bracket
+        premise_mask = premise != left_bracket_token
+        hypothesis_mask = hypothesis != left_bracket_token
 
         # mask out the left brackets in the parse
-        premise = premise_parse[premise_mask].unsqueeze(0)
-        hypothesis = hypothesis_parse[hypothesis_mask].unsqueeze(0)
+        premise = premise[premise_mask].unsqueeze(0)
+        hypothesis = hypothesis[hypothesis_mask].unsqueeze(0)
 
         premise_embedding = self.embedding(premise)
         hypothesis_embedding = self.embedding(hypothesis)

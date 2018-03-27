@@ -28,12 +28,12 @@ class ESIMClassifier(nn.Module):
 
 		self.bilstm_infer = nn.LSTM(input_size=params['F_h'], hidden_size=params['lstm_h'], batch_first=True, bidirectional=True)
 
-		self.final_mlp = nn.Sequential(nn.Linear(input_size, param['lstm_h']),
+		self.final_mlp = nn.Sequential(nn.Linear(input_size, params['lstm_h']),
 									   nn.Tanh(),
 									   nn.Dropout(params['mlp_dr']))
 
-		self.softmax_layer = nn.Sequential(nn.Linear(param['lstm_h'], params['num_class']),
-										   nn.softmax())
+		self.softmax_layer = nn.Sequential(nn.Linear(params['lstm_h'], params['num_class']),
+										   nn.Softmax())
 
 
 	def init_weight(self, pretrained_embedding):
