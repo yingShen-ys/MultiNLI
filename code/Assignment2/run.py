@@ -2,14 +2,16 @@ from __future__ import print_function
 import sys
 import os
 
-sys.path.append("../")
 
-# from code.utils import load_param
 
-from model import ESIMClassifier, SSClassifier
-from model import ESIMTreeClassifier
+sys.path.append("..")
+from model import *
+# from model.ESIM_classifier import ESIMClassifier
+# from model.ESIM_tree import ESIMTreeClassifier
+# from model.ssclassifier import SSClassifier
 from utils import NLIDataloader
 from utils import evaluate, combine_dataset, load_param
+
 
 from sklearn.metrics import accuracy_score
 import argparse
