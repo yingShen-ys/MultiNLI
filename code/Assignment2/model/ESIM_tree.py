@@ -132,10 +132,11 @@ class TreeLSTM(nn.Module):
                 left_state = stack.pop()
                 node_state = self.cell(val, left_state, right_state)
                 stack.append(node_state)
-            print(len(stack))
+            # print(len(stack))
             states.append(node_state[0]) # only append hidden states
-        states = torch.cat(states) # (num_nodes, hidden_size)
+        states = torch.cat(states).unsqueeze(0) # (1, num_nodes, hidden_size)
 
+        # print("\n")
         assert len(stack) == 1 # if this is wrong then something must be off
         return stack[0][0], states
 
@@ -155,9 +156,9 @@ class ESIMTreeClassifier(nn.Module):
         super(ESIMTreeClassifier, self).__init__()
         self.embedding = nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"])
         self.encoder = TreeLSTM(params["embed_dim"], params["lstm_h"])
-        self.compressor = nn.Sequential(nn.Linear(params["lstm_h"] * 8, params['F_h']), nn.ReLU(), nn.Dropout(params['mlp_dr']))
+        self.compressor = nn.Sequential(nn.Linear(params["lstm_h"] * 4, params['F_h']), nn.ReLU(), nn.Dropout(params['mlp_dr']))
         self.inferer = TreeLSTM(params["F_h"], params["lstm_h"])
-        self.classifier = nn.Sequential(nn.Linear(params["lstm_h"] * 9, params['num_class']), nn.Tanh(), nn.Dropout(params['mlp_dr']))
+        self.classifier = nn.Sequential(nn.Linear(params["lstm_h"] * 6, params['lstm_h']), nn.Tanh(), nn.Dropout(params['mlp_dr']))
         self.softmax_layer = nn.Sequential(nn.Linear(params['lstm_h'], params['num_class']), nn.Softmax())
 
     def init_weight(self, pretrained_embedding):
@@ -177,9 +178,10 @@ class ESIMTreeClassifier(nn.Module):
         hypothesis_embedding = self.embedding(hypothesis)
 
         _, premise_node_states = self.encoder(premise_embedding, premise)
-        _, hypothesis_node_states = self.encoder(hypothesis_embedding, premise)
+        _, hypothesis_node_states = self.encoder(hypothesis_embedding, hypothesis)
 
         # Local Inference Modeling and Enhancement
+        print(premise_node_states.shape)
         corr_matrix = torch.exp(torch.matmul(premise_node_states, torch.transpose(hypothesis_node_states, 1, 2)))
         premise_w = torch.div(corr_matrix, torch.sum(corr_matrix, 2, True))
         hypothesis_w = torch.div(corr_matrix, torch.sum(corr_matrix, 1, True))
@@ -201,8 +203,8 @@ class ESIMTreeClassifier(nn.Module):
         hypothesis_c = self.compressor(hypothesis_m)
 
         # Inference composition
-        _, premise_node_inference = self.inferer(premise_c, premise)
-        _, hypothesis_node_inference = self.inferer(hypothesis_c, premise)
+        premise_root, premise_node_inference = self.inferer(premise_c, premise)
+        hypothesis_root, hypothesis_node_inference = self.inferer(hypothesis_c, hypothesis)
 
         # Pooling
         premise_max, _ = torch.max(premise_node_inference, 1)
@@ -210,9 +212,10 @@ class ESIMTreeClassifier(nn.Module):
         premise_v = torch.cat([torch.mean(premise_node_inference, 1), premise_max], 1)
         hypothesis_v = torch.cat([torch.mean(hypothesis_node_inference, 1), hypothesis_max], 1)
 
-        v = torch.cat([premise_v, hypothesis_v], 1)
+        v = torch.cat([premise_v, hypothesis_v, premise_root, hypothesis_root], 1)
 
         # final classifier
         prediction = self.classifier(v)
+        prediction = self.softmax_layer(prediction)
 
         return prediction
