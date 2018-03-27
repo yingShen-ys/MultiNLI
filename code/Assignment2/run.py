@@ -84,7 +84,6 @@ def main(options):
     # pick the classification model
     if options["model"] == "esim":
         print("using ESIM classifier")
-        # config["lstm_h"] = random.choice([600])
         model = ESIMClassifier(config)
     elif options["model"] == "ssbilstm":
         print("using shortcut stack classifier")
@@ -92,7 +91,6 @@ def main(options):
     else:
         print("using ESIM-tree classifier")
         options["model"] = "esim_tree"
-        # config["lstm_h"] = random.choice([600])
         model = ESIMTreeClassifier(config)
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
@@ -100,6 +98,7 @@ def main(options):
     criterion = nn.CrossEntropyLoss(size_average=False)
     if USE_GPU:
         model.cuda()
+
     optimizer = optim.Adam(params=model.parameters(), lr=config['lr'])
     lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=config['lr_decay'])
     curr_patience = patience

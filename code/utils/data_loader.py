@@ -57,12 +57,12 @@ class NLIDataloader():
         """
 
         train, match, mis_match = torchtext.data.TabularDataset.splits(path=self.multinli_path, format='json',
-                                                                       train='multinli_1.0_train.jsonl',
-                                                                       # train='train.jsonl',
-                                                                       validation='multinli_1.0_dev_matched.jsonl',
-                                                                       # validation='train.jsonl',
-                                                                       test='multinli_1.0_dev_mismatched.jsonl',
-                                                                       # test='train.jsonl',
+                                                                       # train='multinli_1.0_train.jsonl',
+                                                                       train='train.jsonl',
+                                                                       # validation='multinli_1.0_dev_matched.jsonl',
+                                                                       validation='train.jsonl',
+                                                                       # test='multinli_1.0_dev_mismatched.jsonl',
+                                                                       test='train.jsonl',
                                                                        fields={'sentence1': ('premise', text_field),
                                                                                'sentence2': ('hypothesis', text_field),
                                                                                'sentence1_binary_parse': ('premise_parse', text_field),

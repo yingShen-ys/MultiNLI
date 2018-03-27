@@ -169,6 +169,9 @@ class ESIMTreeClassifier(nn.Module):
         left_bracket_token = premise[0, 0] # the first token must be left_bracket
         premise_mask = premise != left_bracket_token
         hypothesis_mask = hypothesis != left_bracket_token
+        print(premise.shape)
+        print(hypothesis.shape)
+        input()
 
         # mask out the left brackets in the parse
         premise = premise[premise_mask].unsqueeze(0)
@@ -181,7 +184,7 @@ class ESIMTreeClassifier(nn.Module):
         _, hypothesis_node_states = self.encoder(hypothesis_embedding, hypothesis)
 
         # Local Inference Modeling and Enhancement
-        print(premise_node_states.shape)
+        # print(premise_node_states.shape)
         corr_matrix = torch.exp(torch.matmul(premise_node_states, torch.transpose(hypothesis_node_states, 1, 2)))
         premise_w = torch.div(corr_matrix, torch.sum(corr_matrix, 2, True))
         hypothesis_w = torch.div(corr_matrix, torch.sum(corr_matrix, 1, True))
