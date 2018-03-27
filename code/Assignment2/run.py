@@ -134,7 +134,9 @@ def main(options):
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
             train_loss += loss.data[0] / len(train_iter)
+
             loss.backward()
+            nn.utils.clip_grad_norm(model.parameters(), config['clip_c'])
             optimizer.step()
 
             predictions.append(output.cpu().data.numpy())
