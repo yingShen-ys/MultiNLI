@@ -91,6 +91,7 @@ def main(options):
         model = SSClassifier(config)
     else:
         print("using ESIM-tree classifier")
+        options["model"] == "esim_tree"
         # config["lstm_h"] = random.choice([600])
         model = ESIMTreeClassifier(config)
 
@@ -121,9 +122,13 @@ def main(options):
         labels = []
         for batch_idx, batch in enumerate(train_iter):
             model.zero_grad()
-
-            premise, _premis_lens = batch.premise
-            hypothesis, _hypothesis_lens = batch.hypothesis
+            
+            if options["model"] != "esim_tree":
+                premise, _premis_lens = batch.premise
+                hypothesis, _hypothesis_lens = batch.hypothesis
+            else:
+                premise, _ = batch.premise_parse
+                hypothesis, _ = batch.hypothesis_parse
             label = batch.label
 
             output = model(premise=premise, hypothesis=hypothesis)

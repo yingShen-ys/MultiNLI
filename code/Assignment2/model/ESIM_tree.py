@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 from torch.nn import Parameter
-from torch.nn.init import xavier_uniform
+from torch.nn.init import xavier_uniform, orthogonal
 from torch.nn.modules.rnn import RNNCellBase
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -52,8 +52,8 @@ class TreeLSTMCell(RNNCellBase):
         Apply the classic initialization of LSTM weights and bias
         '''
         xavier_uniform(self.weight_ih)
-        xavier_uniform(self.weight_lhh)
-        xavier_uniform(self.weight_rhh)
+        orthogonal(self.weight_lhh)
+        orthogonal(self.weight_rhh)
 
         # biases should be zeros except for forget gates'
         self.bias_ih.data.fill_(0)
@@ -109,16 +109,20 @@ class TreeLSTM(nn.Module):
         self.cell = TreeLSTMCell(in_features, hidden_size)
 
     def forward(self, input, tree):
+        '''
+        input is all the embedding vectors (hence variables), tree is the list of all token indices
+        '''
         is_cuda = next(self.cell.parameters()).is_cuda()
         states = [] # a place holder for storing all node states
+        right_bracket_token = tree[0, -1] # the last token must be right_bracket
 
         if is_cuda:
             FloatTensor = torch.cuda.FloatTensor
         else:
             FloatTensor = torch.FloatTensor
 
-        for node, val in zip(tree, input):
-            if node != "<-REDUCE->":
+        for node, val in zip(tree.permute(1, 0), input.permute(1, 0, 2)):
+            if (node != right_bracket_token).all(): # the condition results in a ByteTensor, had to use .all() on it to get bool
                 init_left_state = [Variable(torch.zeros(self.hidden_size).type(FloatTensor), requires_grad=False) for _ in range(2)]
                 init_right_state = [Variable(torch.zeros(self.hidden_size).type(FloatTensor), requires_grad=False) for _ in range(2)]
                 node_state = self.cell(val, init_left_state, init_right_state)
@@ -128,7 +132,8 @@ class TreeLSTM(nn.Module):
                 left_state = self.stack.pop()
                 node_state = self.cell(val, left_state, right_state)
                 self.stack.append(node_state)
-            states.append(node_state)
+            states.append(node_state[0]) # only append hidden states
+        states = torch.cat(states) # (num_nodes, hidden_size)
 
         assert len(self.stack) == 1 # if this is wrong then something must be off
         return self.stack[0][0], states
@@ -139,6 +144,10 @@ class ESIMTreeClassifier(nn.Module):
     ESIM with Tree LSTM
 
     Args:
+        params: a dictionary that contains all the neccessary hyperparameters
+
+    Shapes:
+         - Input: 
     '''
 
     def __init__(self, params):
@@ -152,5 +161,56 @@ class ESIMTreeClassifier(nn.Module):
     def reset_parameters(self, pretrained_embedding):
         self.embedding.weight = Parameter(pretrained_embedding)
 
-    def forward(self, premise, hypothesis):
-        pass
+
+    def forward(self, premise_parse, hypothesis_parse):
+        left_bracket_token = premise_parse[0, 0] # the first token must be left_bracket
+        premise_mask = premise_parse != left_bracket_token
+        hypothesis_mask = hypothesis_parse != left_bracket_token
+
+        # mask out the left brackets in the parse
+        premise = premise_parse[premise_mask].unsqueeze(0)
+        hypothesis = hypothesis_parse[hypothesis_mask].unsqueeze(0)
+
+        premise_embedding = self.embedding(premise)
+        hypothesis_embedding = self.embedding(hypothesis)
+
+        _, premise_node_states = self.encoder(premise_embedding, premise)
+        _, hypothesis_node_states = self.encoder(hypothesis_embedding, premise)
+
+        # Local Inference Modeling and Enhancement
+        corr_matrix = torch.exp(torch.matmul(premise_node_states, torch.transpose(hypothesis_node_states, 1, 2)))
+        premise_w = torch.div(corr_matrix, torch.sum(corr_matrix, 2, True))
+        hypothesis_w = torch.div(corr_matrix, torch.sum(corr_matrix, 1, True))
+
+        premise_tilde = torch.matmul(premise_w, hypothesis_node_states)
+        hypothesis_tilde = torch.matmul(torch.transpose(hypothesis_w, 1, 2), premise_node_states)
+
+        premise_m = torch.cat([premise_node_states,
+                               premise_tilde,
+                               torch.abs(premise_node_states - premise_tilde),
+                               torch.mul(premise_node_states, premise_tilde)], 2)
+        hypothesis_m = torch.cat([hypothesis_node_states,
+                                  hypothesis_tilde,
+                                  torch.abs(hypothesis_node_states - hypothesis_tilde),
+                                  torch.mul(hypothesis_node_states, hypothesis_tilde)], 2)
+
+        # Reducing the dimensions
+        premise_c = self.compressor(premise_m)
+        hypothesis_c = self.compressor(hypothesis_m)
+
+        # Inference composition
+        _, premise_node_inference = self.inferer(premise_c, premise)
+        _, hypothesis_node_inference = self.inferer(hypothesis_c, premise)
+
+        # Pooling
+        premise_max, _ = torch.max(premise_node_inference, 1)
+        hypothesis_max, _ = torch.max(hypothesis_node_inference, 1)
+        premise_v = torch.cat([torch.mean(premise_node_inference, 1), premise_max], 1)
+        hypothesis_v = torch.cat([torch.mean(hypothesis_node_inference, 1), hypothesis_max], 1)
+
+        v = torch.cat([premise_v, hypothesis_v], 1)
+
+        # final classifier
+        prediction = self.classifier(v)
+
+        return prediction
