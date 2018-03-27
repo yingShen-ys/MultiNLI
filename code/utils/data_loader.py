@@ -16,9 +16,13 @@ class NLIDataloader():
         self.embedding_name = embedding_name
 
 
-    def load_nlidata(self, batch_size, gpu_option):
-        TEXT_FIELD = torchtext.data.Field(sequential=True, tokenize=torchtext.data.get_tokenizer('spacy'),
-                                          batch_first=True, include_lengths=True, lower=True)
+    def load_nlidata(self, batch_size, gpu_option, tokenizer):
+        if tokenizer == "spacy":
+            TEXT_FIELD = torchtext.data.Field(sequential=True, tokenize=torchtext.data.get_tokenizer('spacy'),
+                                              batch_first=True, include_lengths=True, lower=True)
+        else:
+            TEXT_FIELD = torchtext.data.Field(sequential=True, tokenize=(lambda s: s.split(' ')),
+                                               batch_first=True, include_lengths=True, lower=True)
         LABEL_FIELD = torchtext.data.Field(sequential=False, batch_first=True, unk_token=None)
 
         multinli_train, multinli_match, multinli_mis_match = self.load_mutidata_json(TEXT_FIELD, LABEL_FIELD)

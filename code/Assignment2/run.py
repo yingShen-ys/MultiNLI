@@ -2,14 +2,16 @@ from __future__ import print_function
 import sys
 import os
 
-sys.path.append("../")
 
-# from code.utils import load_param
 
-from model import ESIMClassifier, SSClassifier
-from model import ESIMTreeClassifier
+sys.path.append("..")
+from model import *
+# from model.ESIM_classifier import ESIMClassifier
+# from model.ESIM_tree import ESIMTreeClassifier
+# from model.ssclassifier import SSClassifier
 from utils import NLIDataloader
 from utils import evaluate, combine_dataset, load_param
+
 
 from sklearn.metrics import accuracy_score
 import argparse
@@ -58,12 +60,18 @@ def main(options):
     # load hyperparamters
     config = load_param(options["model"])
 
+    # pick tokenizer method
+    if options["model"] == "ssbilstm":
+        tokenizer_method = 'spacy'
+    else:
+        tokenizer_method =' '
+
     # prepare the datasets
     (snli_train_iter, snli_val_iter, snli_test_iter), \
     (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
     TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, config["pretained"]).load_nlidata(batch_size=config["batch_sz"],
-                                                                                    gpu_option=device)
+                                                                                    gpu_option=device, tokenizer=tokenizer_method)
 
     # pick the training, validation, testing sets
     if options["data"] == "snli":
