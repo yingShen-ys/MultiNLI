@@ -3,12 +3,11 @@ import sys
 import os
 
 
-
 sys.path.append("..")
-from model import *
-# from model.ESIM_classifier import ESIMClassifier
-# from model.ESIM_tree import ESIMTreeClassifier
-# from model.ssclassifier import SSClassifier
+# from model import *
+from model.ESIM_classifier import ESIMClassifier
+from model.ESIM_tree import ESIMTreeClassifier
+from model.ssclassifier import SSClassifier
 from utils import NLIDataloader
 from utils import evaluate, combine_dataset, load_param
 

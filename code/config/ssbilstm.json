@@ -1,9 +1,9 @@
 {
 	"pretained": "glove.840B.300d",
 	"embed_dim": 300,
-	"batch_sz": 10,
+	"batch_sz": 32,
 	"lr": 0.0002,
-	"lr_decay": 1,
+	"lr_decay": 0.5,
 	"lstm_h": [512, 1024, 2048],
 	"mlp_h": [1600],
 	"mlp_dr": 0.1,

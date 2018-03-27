@@ -20,21 +20,16 @@ class ESIMClassifier(nn.Module):
 
 		self.embeddings = nn.Sequential(nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"]),
 										nn.Dropout(params['mlp_dr']))
-
 		self.bilstm_encoding = nn.LSTM(input_size=params["embed_dim"], hidden_size=params["lstm_h"], batch_first=True, bidirectional=True)
-
 		input_size = params['lstm_h'] * 8
 		self.mapping = nn.Sequential(nn.Linear(input_size, params['F_h']),
 									 nn.ReLU(),
 									 nn.Dropout(params['mlp_dr']))
-
 		self.bilstm_infer = nn.LSTM(input_size=params['F_h'], hidden_size=params['lstm_h'], batch_first=True, bidirectional=True)
-
 		self.final_mlp = nn.Sequential(nn.Dropout(params['mlp_dr']),
 									   nn.Linear(input_size, params['lstm_h']),
 									   nn.Tanh(),
 									   nn.Dropout(params['mlp_dr']))
-
 		self.softmax_layer = nn.Sequential(nn.Linear(params['lstm_h'], params['num_class']),
 										   nn.Softmax())
 

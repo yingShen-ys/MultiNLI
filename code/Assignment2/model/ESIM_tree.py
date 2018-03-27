@@ -154,11 +154,15 @@ class ESIMTreeClassifier(nn.Module):
 
     def __init__(self, params):
         super(ESIMTreeClassifier, self).__init__()
-        self.embedding = nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"])
+        self.embedding = nn.Sequential(nn.Embedding(params["vocab_size"], embedding_dim=params["embed_dim"]),
+                                       nn.Dropout(params['mlp_dr']))
         self.encoder = TreeLSTM(params["embed_dim"], params["lstm_h"])
         self.compressor = nn.Sequential(nn.Linear(params["lstm_h"] * 4, params['F_h']), nn.ReLU(), nn.Dropout(params['mlp_dr']))
         self.inferer = TreeLSTM(params["F_h"], params["lstm_h"])
-        self.classifier = nn.Sequential(nn.Linear(params["lstm_h"] * 6, params['lstm_h']), nn.Tanh(), nn.Dropout(params['mlp_dr']))
+        self.classifier = nn.Sequential(nn.Dropout(params['mlp_dr']),
+                                        nn.Linear(params["lstm_h"] * 6, params['lstm_h']), 
+                                        nn.Tanh(), 
+                                        nn.Dropout(params['mlp_dr']))
         self.softmax_layer = nn.Sequential(nn.Linear(params['lstm_h'], params['num_class']), nn.Softmax())
 
     def init_weight(self, pretrained_embedding):
@@ -169,9 +173,6 @@ class ESIMTreeClassifier(nn.Module):
         left_bracket_token = premise[0, 0] # the first token must be left_bracket
         premise_mask = premise != left_bracket_token
         hypothesis_mask = hypothesis != left_bracket_token
-        print(premise.shape)
-        print(hypothesis.shape)
-        input()
 
         # mask out the left brackets in the parse
         premise = premise[premise_mask].unsqueeze(0)
@@ -185,20 +186,26 @@ class ESIMTreeClassifier(nn.Module):
 
         # Local Inference Modeling and Enhancement
         # print(premise_node_states.shape)
-        corr_matrix = torch.exp(torch.matmul(premise_node_states, torch.transpose(hypothesis_node_states, 1, 2)))
-        premise_w = torch.div(corr_matrix, torch.sum(corr_matrix, 2, True))
-        hypothesis_w = torch.div(corr_matrix, torch.sum(corr_matrix, 1, True))
+        corr_matrix = torch.matmul(premise_node_states, torch.transpose(hypothesis_node_states, 1, 2))
+        
+        e_max_1, _ = torch.max(corr_matrix, 1, keepdim=True)
+        e_max_2, _ = torch.max(corr_matrix, 2, keepdim=True)
+        e_matrix_1 = torch.exp(corr_matrix - e_max_1)
+        e_matrix_2 = torch.exp(corr_matrix - e_max_2)
 
-        premise_tilde = torch.matmul(premise_w, hypothesis_node_states)
-        hypothesis_tilde = torch.matmul(torch.transpose(hypothesis_w, 1, 2), premise_node_states)
+        w_2 = torch.div(e_matrix_2, torch.sum(e_matrix_2, 2, True)) # premise_w
+        w_1 = torch.div(e_matrix_1, torch.sum(e_matrix_1, 1, True)) # hypothesis_w
+
+        premise_tilde = torch.matmul(w_2, hypothesis_node_states)
+        hypothesis_tilde = torch.matmul(torch.transpose(w_1, 1, 2), premise_node_states)
 
         premise_m = torch.cat([premise_node_states,
                                premise_tilde,
-                               torch.abs(premise_node_states - premise_tilde),
+                               premise_node_states - premise_tilde,
                                torch.mul(premise_node_states, premise_tilde)], 2)
         hypothesis_m = torch.cat([hypothesis_node_states,
                                   hypothesis_tilde,
-                                  torch.abs(hypothesis_node_states - hypothesis_tilde),
+                                  hypothesis_node_states - hypothesis_tilde,
                                   torch.mul(hypothesis_node_states, hypothesis_tilde)], 2)
 
         # Reducing the dimensions
