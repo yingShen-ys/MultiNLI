@@ -1,0 +1,12 @@
+{
+	"pretained": "glove.840B.300d",
+	"embed_dim": 300,
+	"batch_sz": 32,
+	"lr": 0.0004,
+	"lr_decay": 0.5,
+	"lstm_h": 300,
+	"mlp_h": [300],
+	"mlp_dr": 0.5,
+	"F_h": 300,
+	"clip_c": 10
+}
