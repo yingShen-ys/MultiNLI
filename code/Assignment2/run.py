@@ -275,7 +275,7 @@ if __name__ == "__main__":
                          type=str, default='../../data/snli_1.0/')
     # OPTIONS.add_argument('--data', dest='data', default='snli')
     OPTIONS.add_argument('--data', dest='data', default='snli')
-    OPTIONS.add_argument('--model', dest='model', default='ssbilstm')
+    OPTIONS.add_argument('--model', dest='model', default='esim')
     OPTIONS.add_argument('--model_path', dest='model_path',
                          type=str, default='../saved_model/')
     OPTIONS.add_argument('--output_path', dest='output_path',

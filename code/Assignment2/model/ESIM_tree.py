@@ -153,3 +153,4 @@ class ESIMTreeClassifier(nn.Module):
         self.embedding.weight = Parameter(pretrained_embedding)
 
     def forward(self, premise, hypothesis):
+        pass
