@@ -158,7 +158,7 @@ class ESIMTreeClassifier(nn.Module):
         self.compressor = nn.Sequential(nn.Linear(params["lstm_h"] * 8, params['F_h']), nn.ReLU(), nn.Dropout(params['mlp_dr']))
         self.inferer = TreeLSTM(params["F_h"], params["lstm_h"])
         self.classifier = nn.Sequential(nn.Linear(params["lstm_h"] * 9, params['num_class']), nn.Tanh(), nn.Dropout(params['mlp_dr']))
-        self.softmax_layer = nn.Sequential(nn.Linear(params['lstm_h'], params['num_class']), nn.Softmax)
+        self.softmax_layer = nn.Sequential(nn.Linear(params['lstm_h'], params['num_class']), nn.Softmax())
 
     def init_weight(self, pretrained_embedding):
         self.embedding.weight = Parameter(pretrained_embedding)
