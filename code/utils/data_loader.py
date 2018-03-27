@@ -19,10 +19,12 @@ class NLIDataloader():
     def load_nlidata(self, batch_size, gpu_option):
         TEXT_FIELD = torchtext.data.Field(sequential=True, tokenize=torchtext.data.get_tokenizer('spacy'),
                                           batch_first=True, include_lengths=True, lower=True)
+        TREE_TEXT_FIELD = torchtext.data.Field(sequential=True, tokenize=(lambda s: s.split(' ')),
+                                               batch_first=True, include_lengths=True, lower=True)
         LABEL_FIELD = torchtext.data.Field(sequential=False, batch_first=True, unk_token=None)
 
-        multinli_train, multinli_match, multinli_mis_match = self.load_mutidata_json(TEXT_FIELD, LABEL_FIELD)
-        snli_train, snli_dev, snli_test = self.load_snlidata_json(TEXT_FIELD, LABEL_FIELD)
+        multinli_train, multinli_match, multinli_mis_match = self.load_mutidata_json(TEXT_FIELD, TREE_TEXT_FIELD, LABEL_FIELD)
+        snli_train, snli_dev, snli_test = self.load_snlidata_json(TEXT_FIELD, TREE_TEXT_FIELD, LABEL_FIELD)
 
         TEXT_FIELD.build_vocab(multinli_train, multinli_match, multinli_mis_match,
                                snli_train, snli_dev, snli_test, vectors=self.embedding_name)
@@ -49,7 +51,7 @@ class NLIDataloader():
                TEXT_FIELD, LABEL_FIELD
 
 
-    def load_mutidata_json(self, text_field, label_field):
+    def load_mutidata_json(self, text_field, tree_text_field, label_field):
         """
         load the data in json format and form torchtext dataset
         :param path:
@@ -65,15 +67,15 @@ class NLIDataloader():
                                                                        # test='train.jsonl',
                                                                        fields={'sentence1': ('premise', text_field),
                                                                                'sentence2': ('hypothesis', text_field),
-                                                                               'sentence1_binary_parse': ('premise_parse', text_field),
-                                                                               'sentence2_binary_parse': ('hypothesis_parse', text_field),
+                                                                               'sentence1_binary_parse': ('premise_parse', tree_text_field),
+                                                                               'sentence2_binary_parse': ('hypothesis_parse', tree_text_field),
                                                                                'gold_label': ('label', label_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
 
         return train, match, mis_match
 
-    def load_snlidata_json(self, text_field, label_field):
+    def load_snlidata_json(self, text_field, tree_text_field, label_field):
         train, dev, test = torchtext.data.TabularDataset.splits(path=self.snli_path, format='json',
                                                                        # train='snli_1.0_train.jsonl',
                                                                        # validation='snli_1.0_dev.jsonl',
@@ -83,8 +85,8 @@ class NLIDataloader():
                                                                        test='train.jsonl',
                                                                        fields={'sentence1': ('premise', text_field),
                                                                                'sentence2': ('hypothesis', text_field),
-                                                                               'sentence1_binary_parse': ('premise_parse', text_field),
-                                                                               'sentence2_binary_parse': ('hypothesis_parse', text_field),
+                                                                               'sentence1_binary_parse': ('premise_parse', tree_text_field),
+                                                                               'sentence2_binary_parse': ('hypothesis_parse', tree_text_field),
                                                                                'gold_label': ('label', label_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
