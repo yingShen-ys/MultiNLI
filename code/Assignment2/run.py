@@ -185,12 +185,14 @@ def main(options):
                 premise, _ = batch.premise_parse
                 hypothesis, _ = batch.hypothesis_parse
             label = batch.label
-            output = model(premise=premise, hypothesis=hypothesis)
-            loss = criterion(output, label)
-            valid_loss += loss.data[0] / len(val_iter)
+            pairID = batch.pairID
+            try:
+                output = model(premise=premise, hypothesis=hypothesis)
+                loss = criterion(output, label)
+                valid_loss += loss.data[0] / len(val_iter)
 
-            predictions.append(output.cpu().data.numpy())
-            labels.append(label.cpu().data.numpy())
+                predictions.append(output.cpu().data.numpy())
+                labels.append(label.cpu().data.numpy())
 
         if np.isnan(valid_loss):
             print("Training: NaN values happened, rebooting...\n\n")
@@ -224,6 +226,7 @@ def main(options):
         predictions = []
         labels = []
         if options["data"] == "snli":
+            skip_cnt = 0
             for _, batch in enumerate(test_iter):
                 if options["model"] != "esim_tree":
                     premise, _premis_lens = batch.premise
@@ -232,21 +235,26 @@ def main(options):
                     premise, _ = batch.premise_parse
                     hypothesis, _ = batch.hypothesis_parse
                 label = batch.label
+                pairID = batch.pairID
 
-                output = best_model(premise=premise, hypothesis=hypothesis)
-                loss = criterion(output, label)
-                test_loss += loss.data[0] / len(snli_test_iter)
+                try:
+                    output = best_model(premise=premise, hypothesis=hypothesis)
+                    loss = criterion(output, label)
+                    test_loss += loss.data[0] / len(snli_test_iter)
 
-                predictions.append(output.cpu().data.numpy())
-                labels.append(label.cpu().data.numpy())
+                    predictions.append(output.cpu().data.numpy())
+                    labels.append(label.cpu().data.numpy())
 
-                predictions = np.concatenate(predictions)
-                labels = np.concatenate(labels)
+                    predictions = np.concatenate(predictions)
+                    labels = np.concatenate(labels)
 
-                f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab, "snli_cm.jpg")
+                    f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab, "snli_cm.jpg")
 
-                print("Test F1:", f1)
-                print("Binary Acc:", acc_score)
+                    print("Test F1:", f1)
+                    print("Binary Acc:", acc_score)
+                except:
+                    skip_cnt += 1
+                    print("test skip {} examples: {}".format(skip_cnt, pairID))
         else:  # multinli
             predictions_match = []
             labels_match = []
