@@ -154,7 +154,7 @@ def main(options):
                 labels.append(label.cpu().data.numpy())
             except:
                 skip_cnt += 1
-                print(pairID)
+                print("skip {} examples: {}".format(skip_cnt, pairID))
 
             if batch_idx % 100 == 0:
                 print("Batch {}/{} complete! Average training loss {}".format(batch_idx, len(train_iter), loss.data[0]/ batch.batch_size))
