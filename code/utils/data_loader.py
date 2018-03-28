@@ -71,7 +71,8 @@ class NLIDataloader():
                                                                                'sentence2': ('hypothesis', text_field),
                                                                                'sentence1_binary_parse': ('premise_parse', text_field),
                                                                                'sentence2_binary_parse': ('hypothesis_parse', text_field),
-                                                                               'gold_label': ('label', label_field)},
+                                                                               'gold_label': ('label', label_field),
+                                                                               'pairID': ('pairID', label_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
 
@@ -89,7 +90,8 @@ class NLIDataloader():
                                                                                'sentence2': ('hypothesis', text_field),
                                                                                'sentence1_binary_parse': ('premise_parse', text_field),
                                                                                'sentence2_binary_parse': ('hypothesis_parse', text_field),
-                                                                               'gold_label': ('label', label_field)},
+                                                                               'gold_label': ('label', label_field),
+                                                                               'pairID': ('pairID', label_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
         return train, dev, test
