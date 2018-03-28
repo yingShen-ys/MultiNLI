@@ -4,7 +4,6 @@ import os
 
 
 sys.path.append("..")
-# from model import *
 from model.ESIM_classifier import ESIMClassifier
 from model.ESIM_tree import ESIMTreeClassifier
 from model.ssclassifier import SSClassifier
@@ -106,6 +105,9 @@ def main(options):
     if USE_GPU:
         model.cuda()
 
+    model = torch.load(model_path)
+    config["lr"] = 2.5e-05
+    epochs = 13
     optimizer = optim.Adam(params=model.parameters(), lr=config['lr'])
     lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=config['lr_decay'])
     curr_patience = patience
@@ -310,7 +312,7 @@ if __name__ == "__main__":
     OPTIONS.add_argument('--data', dest='data', default='snli')
     OPTIONS.add_argument('--model', dest='model', default='esim')
     OPTIONS.add_argument('--model_path', dest='model_path',
-                         type=str, default='../saved_model/')
+                         type=str, default='saved_model/')
     OPTIONS.add_argument('--output_path', dest='output_path',
                          type=str, default='results/')
     OPTIONS.add_argument('--gpu', dest='gpu', type=int, default=-1)
