@@ -139,6 +139,7 @@ def main(options):
                 premise, _ = batch.premise_parse
                 hypothesis, _ = batch.hypothesis_parse
             label = batch.label
+            pairID = batch.pairID
 
             try:
                 output = model(premise=premise, hypothesis=hypothesis)
@@ -153,6 +154,7 @@ def main(options):
                 labels.append(label.cpu().data.numpy())
             except:
                 skip_cnt += 1
+                print(pairID)
 
             if batch_idx % 100 == 0:
                 print("Batch {}/{} complete! Average training loss {}".format(batch_idx, len(train_iter), loss.data[0]/ batch.batch_size))
