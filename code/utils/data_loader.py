@@ -64,15 +64,14 @@ class NLIDataloader():
                                                                        train='multinli_1.0_train.jsonl',
                                                                        validation='multinli_1.0_dev_matched.jsonl',
                                                                        test='multinli_1.0_dev_mismatched.jsonl',
-                                                                       # train='train.jsonl',
-                                                                       # validation='train.jsonl',
-                                                                       # test='train.jsonl',
+                                                                    #    train='train.jsonl',
+                                                                    #    validation='train.jsonl',
+                                                                    #    test='train.jsonl',
                                                                        fields={'sentence1': ('premise', text_field),
                                                                                'sentence2': ('hypothesis', text_field),
                                                                                'sentence1_binary_parse': ('premise_parse', text_field),
                                                                                'sentence2_binary_parse': ('hypothesis_parse', text_field),
-                                                                               'gold_label': ('label', label_field),
-                                                                               'pairID': ('pairID', label_field)},
+                                                                               'gold_label': ('label', label_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
 
@@ -90,8 +89,7 @@ class NLIDataloader():
                                                                                'sentence2': ('hypothesis', text_field),
                                                                                'sentence1_binary_parse': ('premise_parse', text_field),
                                                                                'sentence2_binary_parse': ('hypothesis_parse', text_field),
-                                                                               'gold_label': ('label', label_field),
-                                                                               'pairID': ('pairID', label_field)},
+                                                                               'gold_label': ('label', label_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
         return train, dev, test
