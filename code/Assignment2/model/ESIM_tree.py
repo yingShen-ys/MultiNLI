@@ -132,11 +132,11 @@ class TreeLSTM(nn.Module):
                 left_state = stack.pop()
                 node_state = self.cell(val, left_state, right_state)
                 stack.append(node_state)
-            print(len(stack))
+            # print(len(stack))
             states.append(node_state[0]) # only append hidden states
         states = torch.cat(states).unsqueeze(0) # (1, num_nodes, hidden_size)
 
-        print("\n")
+        # print("\n")
         # print(len(stack))
         assert len(stack) == 1 # if this is wrong then something must be off
         return stack[0][0], states
@@ -174,8 +174,8 @@ class ESIMTreeClassifier(nn.Module):
         left_bracket_token = premise[0, 0] # the first token must be left_bracket
         premise_mask = premise != left_bracket_token
         hypothesis_mask = hypothesis != left_bracket_token
-        print(premise.shape)
-        print(hypothesis.shape)
+        # print(premise.shape)
+        # print(hypothesis.shape)
 
         # mask out the left brackets in the parse
         premise = premise[premise_mask].unsqueeze(0)
@@ -188,13 +188,7 @@ class ESIMTreeClassifier(nn.Module):
         _, hypothesis_node_states = self.encoder(hypothesis_embedding, hypothesis)
 
         # Local Inference Modeling and Enhancement
-<<<<<<< HEAD
-        print(premise_node_states.shape)
-        input()
-        corr_matrix = torch.exp(torch.matmul(premise_node_states, torch.transpose(hypothesis_node_states, 1, 2)))
-        premise_w = torch.div(corr_matrix, torch.sum(corr_matrix, 2, True))
-        hypothesis_w = torch.div(corr_matrix, torch.sum(corr_matrix, 1, True))
-=======
+
         # print(premise_node_states.shape)
         corr_matrix = torch.matmul(premise_node_states, torch.transpose(hypothesis_node_states, 1, 2))
         
@@ -202,7 +196,6 @@ class ESIMTreeClassifier(nn.Module):
         e_max_2, _ = torch.max(corr_matrix, 2, keepdim=True)
         e_matrix_1 = torch.exp(corr_matrix - e_max_1)
         e_matrix_2 = torch.exp(corr_matrix - e_max_2)
->>>>>>> d31c6ce1c061ac15fee18890259882b099fdeebb
 
         w_2 = torch.div(e_matrix_2, torch.sum(e_matrix_2, 2, True)) # premise_w
         w_1 = torch.div(e_matrix_1, torch.sum(e_matrix_1, 1, True)) # hypothesis_w
