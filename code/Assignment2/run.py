@@ -105,7 +105,7 @@ def main(options):
     if USE_GPU:
         model.cuda()
 
-    model = torch.load(model_path)
+    # model = torch.load(model_path)
     config["lr"] = 2.5e-05
     epochs = 13
     optimizer = optim.Adam(params=model.parameters(), lr=config['lr'])
