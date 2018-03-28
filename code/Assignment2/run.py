@@ -126,6 +126,7 @@ def main(options):
         train_loss = 0.0
         predictions = []
         labels = []
+        skip_cnt = 0
         for batch_idx, batch in enumerate(train_iter):
             model.zero_grad()
             
@@ -137,16 +138,19 @@ def main(options):
                 hypothesis, _ = batch.hypothesis_parse
             label = batch.label
 
-            output = model(premise=premise, hypothesis=hypothesis)
-            loss = criterion(output, label)
-            train_loss += loss.data[0] / len(train_iter)
+            try:
+                output = model(premise=premise, hypothesis=hypothesis)
+                loss = criterion(output, label)
+                train_loss += loss.data[0] / len(train_iter)
 
-            loss.backward()
-            nn.utils.clip_grad_norm(model.parameters(), config['clip_c'])
-            optimizer.step()
+                loss.backward()
+                nn.utils.clip_grad_norm(model.parameters(), config['clip_c'])
+                optimizer.step()
 
-            predictions.append(output.cpu().data.numpy())
-            labels.append(label.cpu().data.numpy())
+                predictions.append(output.cpu().data.numpy())
+                labels.append(label.cpu().data.numpy())
+            except:
+                skip_cnt += 1
 
             if batch_idx % 100 == 0:
                 print("Batch {}/{} complete! Average training loss {}".format(batch_idx, len(train_iter), loss.data[0]/ batch.batch_size))
