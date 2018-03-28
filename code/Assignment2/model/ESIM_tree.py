@@ -137,6 +137,7 @@ class TreeLSTM(nn.Module):
         states = torch.cat(states).unsqueeze(0) # (1, num_nodes, hidden_size)
 
         # print("\n")
+        # print(len(stack))
         assert len(stack) == 1 # if this is wrong then something must be off
         return stack[0][0], states
 
@@ -173,6 +174,8 @@ class ESIMTreeClassifier(nn.Module):
         left_bracket_token = premise[0, 0] # the first token must be left_bracket
         premise_mask = premise != left_bracket_token
         hypothesis_mask = hypothesis != left_bracket_token
+        # print(premise.shape)
+        # print(hypothesis.shape)
 
         # mask out the left brackets in the parse
         premise = premise[premise_mask].unsqueeze(0)
@@ -185,6 +188,7 @@ class ESIMTreeClassifier(nn.Module):
         _, hypothesis_node_states = self.encoder(hypothesis_embedding, hypothesis)
 
         # Local Inference Modeling and Enhancement
+
         # print(premise_node_states.shape)
         corr_matrix = torch.matmul(premise_node_states, torch.transpose(hypothesis_node_states, 1, 2))
         
