@@ -186,16 +186,13 @@ def main(options):
                 premise, _ = batch.premise_parse
                 hypothesis, _ = batch.hypothesis_parse
             label = batch.label
-            # try:
+
             output = model(premise=premise, hypothesis=hypothesis)
             loss = criterion(output, label)
             valid_loss += loss.data[0] / len(val_iter)
 
             predictions.append(output.cpu().data.numpy())
             labels.append(label.cpu().data.numpy())
-            # except:
-            #     print(pairID)
-
 
         if np.isnan(valid_loss):
             print("Training: NaN values happened, rebooting...\n\n")
@@ -238,8 +235,8 @@ def main(options):
                     premise, _ = batch.premise_parse
                     hypothesis, _ = batch.hypothesis_parse
                 label = batch.label
+                # pairID = batch.pairID
 
-                # try:
                 output = best_model(premise=premise, hypothesis=hypothesis)
                 loss = criterion(output, label)
                 test_loss += loss.data[0] / len(snli_test_iter)
