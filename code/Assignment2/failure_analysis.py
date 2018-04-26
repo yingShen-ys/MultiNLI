@@ -4,10 +4,9 @@ import os
 
 from torch.autograd import Variable
 
-from .model import ESIMClassifier
-from .model import ESIMTreeClassifier
-from ..utils import NLIDataloader
-from ..utils import evaluate, combine_dataset
+sys.path.append("..")
+from utils import NLIDataloader
+from utils import evaluate, combine_dataset
 
 from sklearn.metrics import accuracy_score
 import argparse
@@ -103,6 +102,7 @@ def switch_pre_hypo(options):
 def snli_eval(options):
     # parse the input args
     run_id = options['run_id']
+    signature = options['signature']
     pretained = options['pretained']
     model_path = options['model_path']
     multinli_path = options['multinli_data_path']
@@ -117,7 +117,8 @@ def snli_eval(options):
         print("CUDA not available, running on cpu.")
 
     # prepare the paths for loading the models
-    model_path = os.path.join(model_path, "model_{}.pt".format(run_id))
+    model_path = os.path.join(model_path, "model_{}_{}.pt".format(signature, run_id))
+    best_model = torch.load(model_path)
 
     params = dict()
     params['batch_sz'] = random.choice([32])
@@ -127,10 +128,9 @@ def snli_eval(options):
     (_multinli_train_iter, _multinli_match_iter, _multinli_mis_match_iter), \
     TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
-                                                                          gpu_option=device)
+                                                                          gpu_option=device, tokenizer='spacy')
 
     criterion = nn.CrossEntropyLoss(size_average=False)
-    best_model = torch.load(model_path)
     best_model.init_weight(TEXT_FIELD.vocab.vectors)
     best_model.cuda()
     best_model.eval()
@@ -201,7 +201,7 @@ def multi_eval(options):
     (_multinli_train_iter, multinli_match_iter, multinli_mis_match_iter), \
     TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
-                                                                          gpu_option=device)
+                                                                          gpu_option=device, tokenizer='spacy')
 
     criterion = nn.CrossEntropyLoss(size_average=False)
     best_model = torch.load(model_path)
@@ -325,5 +325,5 @@ if __name__ == "__main__":
     OPTIONS.add_argument('--gpu', dest='gpu', type=int, default=1)
 
     PARAMS = vars(OPTIONS.parse_args())
-    # multi_eval(PARAMS)
-    snli_eval(PARAMS)
+    multi_eval(PARAMS)
+    # snli_eval(PARAMS)

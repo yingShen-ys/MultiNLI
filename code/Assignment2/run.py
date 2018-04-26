@@ -105,13 +105,15 @@ def main(options):
     if USE_GPU:
         model.cuda()
 
-    # model = torch.load(model_path)
-    config["lr"] = 2.5e-05
-    epochs = 13
+    model = torch.load(model_path)
+    # config['lr'] = 3.125e-6
+    # epochs = 5
+
     optimizer = optim.Adam(params=model.parameters(), lr=config['lr'])
     lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=config['lr_decay'])
     curr_patience = patience
     min_valid_loss = float('Inf')
+
 
     # training & validation
     complete = True
@@ -131,7 +133,7 @@ def main(options):
         skip_cnt = 0
         for batch_idx, batch in enumerate(train_iter):
             model.zero_grad()
-            
+
             if options["model"] != "esim_tree":
                 premise, _premis_lens = batch.premise
                 hypothesis, _hypothesis_lens = batch.hypothesis
@@ -140,20 +142,20 @@ def main(options):
                 hypothesis, _ = batch.hypothesis_parse
             label = batch.label
 
-            try:
-                output = model(premise=premise, hypothesis=hypothesis)
-                loss = criterion(output, label)
-                train_loss += loss.data[0] / len(train_iter)
+            # try:
+            output = model(premise=premise, hypothesis=hypothesis)
+            loss = criterion(output, label)
+            train_loss += loss.data[0] / len(train_iter)
 
-                loss.backward()
-                nn.utils.clip_grad_norm(model.parameters(), config['clip_c'])
-                optimizer.step()
+            loss.backward()
+            # nn.utils.clip_grad_norm(model.parameters(), config['clip_c'])
+            optimizer.step()
 
-                predictions.append(output.cpu().data.numpy())
-                labels.append(label.cpu().data.numpy())
-            except:
-                skip_cnt += 1
-                print("skip {} examples.".format(skip_cnt))
+            predictions.append(output.cpu().data.numpy())
+            labels.append(label.cpu().data.numpy())
+            # except:
+            #     skip_cnt += 1
+                # print("skip {} examples: {}".format(skip_cnt, pairID))
 
             if batch_idx % 100 == 0:
                 print("Batch {}/{} complete! Average training loss {}".format(batch_idx, len(train_iter), loss.data[0]/ batch.batch_size))
@@ -184,16 +186,13 @@ def main(options):
                 premise, _ = batch.premise_parse
                 hypothesis, _ = batch.hypothesis_parse
             label = batch.label
-            # pairID = batch.pairID
-            try:
-                output = model(premise=premise, hypothesis=hypothesis)
-                loss = criterion(output, label)
-                valid_loss += loss.data[0] / len(val_iter)
 
-                predictions.append(output.cpu().data.numpy())
-                labels.append(label.cpu().data.numpy())
-            except:
-                pass
+            output = model(premise=premise, hypothesis=hypothesis)
+            loss = criterion(output, label)
+            valid_loss += loss.data[0] / len(val_iter)
+
+            predictions.append(output.cpu().data.numpy())
+            labels.append(label.cpu().data.numpy())
 
         if np.isnan(valid_loss):
             print("Training: NaN values happened, rebooting...\n\n")
@@ -238,24 +237,23 @@ def main(options):
                 label = batch.label
                 # pairID = batch.pairID
 
-                try:
-                    output = best_model(premise=premise, hypothesis=hypothesis)
-                    loss = criterion(output, label)
-                    test_loss += loss.data[0] / len(snli_test_iter)
+                output = best_model(premise=premise, hypothesis=hypothesis)
+                loss = criterion(output, label)
+                test_loss += loss.data[0] / len(snli_test_iter)
 
-                    predictions.append(output.cpu().data.numpy())
-                    labels.append(label.cpu().data.numpy())
+                predictions.append(output.cpu().data.numpy())
+                labels.append(label.cpu().data.numpy())
 
-                    predictions = np.concatenate(predictions)
-                    labels = np.concatenate(labels)
+                predictions = np.concatenate(predictions)
+                labels = np.concatenate(labels)
 
-                    f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab, "snli_cm.jpg")
+                f1, acc_score = evaluate(predictions, labels, LABEL_FIELD.vocab, "snli_cm.jpg")
 
-                    print("Test F1:", f1)
-                    print("Binary Acc:", acc_score)
-                except:
-                    skip_cnt += 1
-                    print("{} test samples skipped.".format(skip_cnt))
+                print("Test F1:", f1)
+                print("Binary Acc:", acc_score)
+                # except:
+                #     skip_cnt += 1
+                #     print("test skip {} examples: {}".format(skip_cnt, pairID))
         else:  # multinli
             predictions_match = []
             labels_match = []

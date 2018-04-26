@@ -69,8 +69,8 @@ class NLIDataloader():
                                                                     #    test='train.jsonl',
                                                                        fields={'sentence1': ('premise', text_field),
                                                                                'sentence2': ('hypothesis', text_field),
-                                                                               'sentence1_binary_parse': ('premise_parse', text_field),
-                                                                               'sentence2_binary_parse': ('hypothesis_parse', text_field),
+                                                                               # 'sentence1_binary_parse': ('premise_parse', text_field),
+                                                                               # 'sentence2_binary_parse': ('hypothesis_parse', text_field),
                                                                                'gold_label': ('label', label_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
@@ -87,8 +87,8 @@ class NLIDataloader():
                                                                        # test='train.jsonl',
                                                                        fields={'sentence1': ('premise', text_field),
                                                                                'sentence2': ('hypothesis', text_field),
-                                                                               'sentence1_binary_parse': ('premise_parse', text_field),
-                                                                               'sentence2_binary_parse': ('hypothesis_parse', text_field),
+                                                                               # 'sentence1_binary_parse': ('premise_parse', text_field),
+                                                                               # 'sentence2_binary_parse': ('hypothesis_parse', text_field),
                                                                                'gold_label': ('label', label_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
