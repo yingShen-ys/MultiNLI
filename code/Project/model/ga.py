@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import torch.nn as nn
+import torch.nn.functional as F
 import pyro
 import pyro.distributions as dist
 from pyro.infer import SVI, Trace_ELBO, TraceEnum_ELBO, config_enumerate
@@ -57,9 +58,80 @@ class GenreAgnosticInference(nn.Module):
         # initialize a feature-extraction network
         self.sentence_encoder = SentenceEncoder(self.vocab_size,
                                                 self.embedding_size,
-                                                self.hidden_size)
+                                                self.x_dim)
+        
+        # define the probabilistic encoders (variational distributions)
         # mean-field assumption: py and ky factorizes
-        self.encoder_py = 
+        self.encoder_py = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
+                                                  [self.hidden_size, self.hidden_size],
+                                                  self.py_dim)
+        self.encoder_ky = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
+                                                  [self.hidden_size, self.hidden_size],
+                                                  self.ky_dim)
+        # auxilliary likelihood
+        self.encoder_y = CategoricalEncoder(self.x_dim,
+                                            [self.hidden_size, self.hidden_size],
+                                            self.y_dim)
+
+        # mean-field assumption: pz and kz factorizes
+        self.encoder_pz = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
+                                                  [self.hidden_size, self.hidden_size],
+                                                  self.pz_dim)
+        self.encoder_kz = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
+                                                  [self.hidden_size, self.hidden_size],
+                                                  self.kz_dim)
+        # genre likelihood
+        self.encoder_z = CategoricalEncoder(self.x_dim,
+                                            [self.hidden_size, self.hidden_size],
+                                            self.z_dim)
+
+        # define the probabilistic decoders (conditional distributions in model)
+        self.decoder_kz = DiagonalGaussianEncoder(self.pz_dim,
+                                                  [self.hidden_size, self.hidden_size],
+                                                  self.kz_dim)
+        self.decoder_ky = DiagonalGaussianEncoder(self.py_dim,
+                                                  [self.hidden_size, self.hidden_size],
+                                                  self.ky_dim)
+        self.decoder_z = CategoricalEncoder(self.kz_dim,
+                                            [self.hidden_size, self.hidden_size],
+                                            self.z_dim)
+        self.decoder_y = CategoricalEncoder(self.ky_dim,
+                                            [self.hidden_size, self.hidden_size],
+                                            self.y_dim)
+        self.decoder_x = DiagonalGaussianEncoder(self.kz_dim+self.ky_dim,
+                                                 [self.hidden_size, self.hidden_size],
+                                                 self.x_dim)
+
+    def model(self, xs, ys, zs=None):
+        """
+        This model have the following generative process:
+        p(pz) = normal(0, I)
+        p(py) = normal(0, I)
+        p(kz|pz) = normal(mu(pz), sigma(pz))
+        p(ky|py) = normal(mu(py), sigma(py))
+        p(z|kz) = categorical(theta(kz))
+        p(y|ky) = categorical(theta(ky))
+        p(x|kz, ky) = normal(mu(kz, ky), sigma(kz, ky))
+        """
+        pyro.module("gai", self)
+        batch_size = xs.size(0)
+        with pyro.iarange("data"):
+            pz_prior_loc = xs.new_zeros([batch_size, self.pz_dim])
+            pz_prior_scale = xs.new_ones([batch_size, self.pz_dim])
+            py_prior_loc = xs.new_zeros([batch_size, self.py_dim])
+            py_prior_scale = xs.new_ones([batch_size, self.py_dim])
+            pz = pyro.sample("pz", dist.Normal(pz_prior_loc, pz_prior_scale).independent(1))
+            py = pyro.sample("py", dist.Normal(py_prior_loc, py_prior_scale).independent(1))
+
+            kz_loc, kz_scale = self.decoder_kz(pz)
+            ky_loc, ky_scale = self.decoder_ky(py)
+            kz = pyro.sample("kz", dist.Normal(kz_loc, kz_scale).independent(1))
+            ky = pyro.sample("ky", dist.Normal(ky_loc, ky_scale).independent(1))
+
+            theta_z = self.decoder_z(kz)
+            theta_y = self.decoder_y(ky)
+
+
 
 
 class SentenceEncoder(nn.Module):
@@ -166,11 +238,40 @@ class DiagonalGaussianEncoder(nn.Module):
         self.layer_out = nn.Linear(hidden_sizes[-1], 2*output_size)
 
     def forward(self, input):
-        h = self.layer_in(input)
-        h = self.layer_h1(h)
+        h = F.relu(self.layer_in(input))
+        h = F.relu(self.layer_h1(h))
         o = self.layer_out(h)
-        mu, sigma = torch.chunk(o, dim=1)
+        mu, sigma = torch.chunk(o, 2, dim=1)
+        sigma = torch.exp(sigma)
+        return mu, sigma
 
+class CategoricalEncoder(nn.Module):
+    """
+    An MLP that produces the mean and cov for a diagonal Gaussian
+    
+    Args:
+        input_size: int defining the layer sizes
+        hidden_size: [int, int], two hidden layers
+        output_size: the actual output will be twice as this, one for
+                     mean, one for covariance
+
+    Input:
+         - samples: samples from the RV this distribution conditions on
+    
+    Output:
+         - theta: the vector representing a categorical distribution
+    """
+    def __init__(self, input_size, hidden_sizes, output_size):
+        super(CategoricalEncoder, self).__init__()
+        self.layer_in = nn.Linear(input_size, hidden_sizes[0])
+        self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
+        self.layer_out = nn.Linear(hidden_sizes[-1], output_size)
+
+    def forward(self, input):
+        h = F.relu(self.layer_in(input))
+        h = F.relu(self.layer_h1(h))
+        theta = F.softmax(self.layer_out(h), dim=1)
+        return theta
 
 def test():
     model = SentenceEncoder(30, 15, 15)
