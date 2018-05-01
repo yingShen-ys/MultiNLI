@@ -22,6 +22,20 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 np.random.seed(seed)
 
+# Monkey-patch because I trained with a newer version.
+# This can be removed once PyTorch 0.4.x is out.
+# See https://discuss.pytorch.org/t/question-about-rebuild-tensor-v2/14560
+import torch._utils
+try:
+    torch._utils._rebuild_tensor_v2
+except AttributeError:
+    def _rebuild_tensor_v2(storage, storage_offset, size, stride, requires_grad, backward_hooks):
+        tensor = torch._utils._rebuild_tensor(storage, storage_offset, size, stride)
+        tensor.requires_grad = requires_grad
+        tensor._backward_hooks = backward_hooks
+        return tensor
+    torch._utils._rebuild_tensor_v2 = _rebuild_tensor_v2
+
 
 def main(options):
     # parse the input args
@@ -83,12 +97,15 @@ def main(options):
         test_mismatch_iter = multinli_mis_match_iter
 
     # build model
-    config = dict()
     config["vocab_size"] = len(TEXT_FIELD.vocab)
     config["num_class"] = len(LABEL_FIELD.vocab)
+    config["lr_decay"] = 1
+    config["clip_c"] = 10
+
 
     # pick the classification model
-    model = GridLSTM(config["vocab_size"], config["embed_dim"], config["hidden_sz"])
+    # model = GridLSTM(config["vocab_size"], config["embed_dim"], config["hidden_sz"])
+    model = torch.load(model_path)
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
@@ -131,23 +148,23 @@ def main(options):
                 hypothesis, _ = batch.hypothesis_parse
             label = batch.label
 
-            try:
-                output = model(premise=premise, hypothesis=hypothesis)
-                loss = criterion(output, label)
-                train_loss += loss.item() / len(train_iter)
+            # try:
+            output = model(premise=premise, hypothesis=hypothesis)
+            loss = criterion(output, label)
+            train_loss += loss.data[0] / len(train_iter)
 
-                loss.backward()
-                nn.utils.clip_grad_norm(model.parameters(), config['clip_c'])
-                optimizer.step()
+            loss.backward()
+            nn.utils.clip_grad_norm(model.parameters(), config['clip_c'])
+            optimizer.step()
 
-                predictions.append(output.cpu().data.numpy())
-                labels.append(label.cpu().data.numpy())
-            except:
-                skip_cnt += 1
-                print("skip {} examples.".format(skip_cnt))
+            predictions.append(output.cpu().data.numpy())
+            labels.append(label.cpu().data.numpy())
+            # except:
+            #     skip_cnt += 1
+            #     print("skip {} examples.".format(skip_cnt))
 
-            if batch_idx % 100 == 0:
-                print("Batch {}/{} complete! Average training loss {}".format(batch_idx, len(train_iter), loss.item()/ batch.batch_size))
+            if (batch_idx+1) % 100 == 0:
+                print("Batch {}/{} complete! Average training loss {}".format(batch_idx+1, len(train_iter), loss.data[0]/ batch.batch_size))
 
         if np.isnan(train_loss):
             print("Training: NaN values happened, rebooting...\n\n")
@@ -179,7 +196,7 @@ def main(options):
             try:
                 output = model(premise=premise, hypothesis=hypothesis)
                 loss = criterion(output, label)
-                valid_loss += loss.item() / len(val_iter)
+                valid_loss += loss.data[0] / len(val_iter)
 
                 predictions.append(output.cpu().data.numpy())
                 labels.append(label.cpu().data.numpy())
@@ -232,7 +249,7 @@ def main(options):
                 try:
                     output = best_model(premise=premise, hypothesis=hypothesis)
                     loss = criterion(output, label)
-                    test_loss += loss.item() / len(snli_test_iter)
+                    test_loss += loss.data[0] / len(snli_test_iter)
 
                     predictions.append(output.cpu().data.numpy())
                     labels.append(label.cpu().data.numpy())
@@ -263,7 +280,7 @@ def main(options):
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
                 loss = criterion(output, label)
-                test_loss += loss.item() / len(test_match_iter)
+                test_loss += loss.data[0] / len(test_match_iter)
 
                 predictions_match.append(output.cpu().data.numpy())
                 labels_match.append(label.cpu().data.numpy())
@@ -279,7 +296,7 @@ def main(options):
 
                 output = best_model(premise=premise, hypothesis=hypothesis)
                 loss = criterion(output, label)
-                test_loss += loss.item() / len(test_mismatch_iter)
+                test_loss += loss.data[0] / len(test_mismatch_iter)
 
                 predictions_mismatch.append(output.cpu().data.numpy())
                 labels_mismatch.append(label.cpu().data.numpy())
