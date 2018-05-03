@@ -35,8 +35,8 @@ class GenreAgnosticInference(nn.Module):
     def __init__(self, x_dim, y_dim, g_dim,
                  zy_dim, zg_dim, vocab_size,
                  embedding_size, hidden_size,
-                 label_loss_multiplier=None,
-                 genre_loss_multiplier=None):
+                 label_loss_multiplier,
+                 genre_loss_multiplier):
         super(GenreAgnosticInference, self).__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -82,6 +82,13 @@ class GenreAgnosticInference(nn.Module):
                                             [self.hidden_size, self.hidden_size],
                                             self.y_dim)
 
+    def init_weight(self, pretrained_embedding):
+        """
+        Initialize the weight for the embedding layer using pretrained_embedding
+        :param pretrained_embedding:
+        :return:
+        """
+        self.sentence_encoder.init_weight(pretrained_embedding)
 
     def generative_model(self, xh, xp, ys, gs=None):
         """
