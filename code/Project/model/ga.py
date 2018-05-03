@@ -12,6 +12,17 @@ torch.manual_seed(SEED)
 torch.cuda.manual_seed(SEED)
 np.random.seed(SEED)
 
+def long2onehot(long_tensors, num_classes):
+    """
+    Convert a torch.LongTensor of shape (batch_sz,) to (batch_sz, num_classes)
+    """
+    if long_tensors is None:
+        return None
+    long_tensors = long_tensors.view(1, -1)
+    onehot_tensors = long_tensors.new_zeros([long_tensors.size()[0], num_classes])
+    onehot_tensors.scatter_(1, long_tensors, 1)
+    return onehot_tensors
+
 class GenreAgnosticInference(nn.Module):
     """
     Genre Agnostic Inference model for NLI, a structure that is similar to semi-supervised VAE
@@ -54,8 +65,8 @@ class GenreAgnosticInference(nn.Module):
 
     def initialize_model(self):
         # initialize a feature-extraction network
-        self.sentence_encoder = SentenceEncoder(self.vocab_size,
-                                                self.embedding_size,
+        self.sentence_encoder = NaiveSentenceEncoder(self.vocab_size,
+                                                self.embedding_size, self.hidden_size * 2,
                                                 self.x_dim)
 
         # define the probabilistic decoders (generative distributions)
@@ -75,10 +86,10 @@ class GenreAgnosticInference(nn.Module):
         self.encoder_zy = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
                                                   [self.hidden_size, self.hidden_size],
                                                   self.zy_dim)
-        self.encoder_g = CategoricalEncoder(self.kz_dim,
+        self.encoder_g = CategoricalEncoder(self.zg_dim,
                                             [self.hidden_size, self.hidden_size],
-                                            self.z_dim)
-        self.encoder_y = CategoricalEncoder(self.ky_dim,
+                                            self.g_dim)
+        self.encoder_y = CategoricalEncoder(self.zy_dim,
                                             [self.hidden_size, self.hidden_size],
                                             self.y_dim)
 
@@ -108,6 +119,8 @@ class GenreAgnosticInference(nn.Module):
         pyro.module("generative", self)
         xs = self.sentence_encoder(xh, xp) # from (batch_sz, seq_len, embedding_sz) to (batch_sz, x_dim)
         batch_size = xs.size(0)
+        ys = long2onehot(ys, self.y_dim)
+        gs = long2onehot(gs, self.g_dim)
         with pyro.iarange("data"):
             zg_prior_loc = xs.new_zeros([batch_size, self.zg_dim])
             zg_prior_scale = xs.new_ones([batch_size, self.zg_dim])
@@ -127,6 +140,8 @@ class GenreAgnosticInference(nn.Module):
 
     def generative_guide(self, xh, xp, ys, gs=None):
         xs = self.sentence_encoder(xh, xp) # from (batch_sz, seq_len, embedding_sz) to (batch_sz, x_dim)
+        ys = long2onehot(ys, self.y_dim)
+        gs = long2onehot(gs, self.g_dim)
         with pyro.iarange("data"):
             if gs is None:
                 theta_g = self.encoder_g(xs)
@@ -142,6 +157,8 @@ class GenreAgnosticInference(nn.Module):
     def discriminative_model(self, xh, xp, ys, gs=None):
         pyro.module("discriminative", self)
         xs = self.sentence_encoder(xh, xp) # from (batch_sz, seq_len, embedding_sz) to (batch_sz, x_dim)
+        ys = long2onehot(ys, self.y_dim)
+        gs = long2onehot(gs, self.g_dim)        
         with pyro.iarange("data"):
             # only include loss term for genre if gs is provided
             if gs is not None:
@@ -156,6 +173,8 @@ class GenreAgnosticInference(nn.Module):
 
     def discriminative_guide(self, xh, xp, ys, gs=None):
         """A dummy guide for discriminative loss"""
+        # ys = long2onehot(ys, self.y_dim)
+        # gs = long2onehot(gs, self.g_dim)
         pass
 
     def forward(self, xh, xp):
@@ -166,6 +185,46 @@ class GenreAgnosticInference(nn.Module):
         y_dist = self.encoder_y(xs)
         g_dist = self.encoder_g(xs)
         return y_dist, g_dist
+
+
+class NaiveSentenceEncoder(nn.Module):
+    """
+    An bi-directional LSTM to encoder sentence pairs
+    """
+    def __init__(self, vocab_size, embedding_size, hidden_size, output_size, num_layers=2, dropout=0.15):
+        super(NaiveSentenceEncoder, self).__init__()
+        self.vocab_size = vocab_size
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.embedding = nn.Embedding(vocab_size, embedding_size)
+        self.LSTM = nn.LSTM(input_size=embedding_size, hidden_size=hidden_size,
+                            num_layers=num_layers, dropout=dropout, bidirectional=True,
+                            batch_first=True)
+        self.fc_layer = nn.Linear(hidden_size*num_layers*2*2, output_size)
+
+    def init_weight(self, pretrained_embedding):
+        """
+        Initialize the weight for the embedding layer using pretrained_embedding
+        :param pretrained_embedding:
+        :return:
+        """
+        self.embedding.weight = nn.Parameter(pretrained_embedding)
+
+    def forward(self, premise, hypothesis):
+        batch_sz = premise.size()[0]
+        premise_emb = self.embedding(premise)
+        hypothesis_emb = self.embedding(hypothesis)
+
+        _, (premise_rep, _) = self.LSTM(premise_emb) # (batch, num_layers * num_directions, hidden)
+        _, (hypothesis_rep, _) = self.LSTM(hypothesis_emb)
+
+        premise_rep = premise_rep.view(batch_sz, -1) # (batch, *)
+        hypothesis_rep = hypothesis_rep.view(batch_sz, -1)
+
+        total_rep = torch.cat((premise_rep, hypothesis_rep), dim=1)
+        final_rep = F.relu(self.fc_layer(total_rep)) #
+        return final_rep
 
 
 class SentenceEncoder(nn.Module):
@@ -248,6 +307,7 @@ class SentenceEncoder(nn.Module):
         y = self.softmax(self.linear_3(h))
         return y
 
+
 class DiagonalGaussianEncoder(nn.Module):
     """
     An MLP that produces the mean and cov for a diagonal Gaussian
@@ -278,6 +338,7 @@ class DiagonalGaussianEncoder(nn.Module):
         mu, sigma = torch.chunk(o, 2, dim=1)
         sigma = torch.exp(sigma)
         return mu, sigma
+
 
 class CategoricalEncoder(nn.Module):
     """

@@ -57,7 +57,7 @@ def main(args):
     print("Grid search results are in: {}".format(output_path))
 
     # load a set of hyperparams
-    config = load_param("{}_{}_{}.json".format(model_name, run_id, signature))
+    config = load_param("{}_{}_{}".format(model_name, run_id, signature))
 
     # define tokenizer
     tokenizer_method = 'spacy'
@@ -68,6 +68,7 @@ def main(args):
     TEXT_FIELD, LABEL_FIELD, GENRE_FIELD \
         = NLIDataloader(multinli_path, snli_path, config["pretained"]).load_nlidata(batch_size=config["batch_sz"],
                                                                                     gpu_option=device, tokenizer=tokenizer_method)
+    print("Dataset loaded.")
     vocab_size = len(TEXT_FIELD.vocab)
     num_class = len(LABEL_FIELD.vocab)
     num_genre = len(GENRE_FIELD.vocab)
@@ -95,8 +96,8 @@ def main(args):
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
-    optimizer = Adam(params=model.parameters(), lr=config['lr'])
-    guide = config_enumerate(model.generative_guide, 'paralell')
+    optimizer = Adam({'lr': config['lr']})
+    guide = config_enumerate(model.generative_guide, 'parallel')
     generative_loss = SVI(model.generative_model, guide, optimizer,
                           loss=TraceEnum_ELBO(max_iarange_nesting=1))
     discriminative_loss = SVI(model.discriminative_model,
@@ -314,7 +315,7 @@ if __name__ == "__main__":
     OPTIONS = argparse.ArgumentParser()
     OPTIONS.add_argument('--run_id', dest='run_id', type=int, default=1)
     OPTIONS.add_argument('--signature', dest='signature', type=str, default="") # e.g. {model}_{data}
-    OPTIONS.add_argument('--model', dest='model', type=str, default="gai")
+    OPTIONS.add_argument('--model', dest='model', type=str, default="ga")
     OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
     OPTIONS.add_argument('--patience', dest='patience', type=int, default=20)
     OPTIONS.add_argument('--multinli_data_path', dest='multinli_data_path',

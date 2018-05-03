@@ -97,15 +97,12 @@ def main(options):
         test_mismatch_iter = multinli_mis_match_iter
 
     # build model
-    config["vocab_size"] = len(TEXT_FIELD.vocab)
-    config["num_class"] = len(LABEL_FIELD.vocab)
-    config["num_genre"] = len(GENRE_FIELD.vocab)
-    config["lr_decay"] = 1
-    config["clip_c"] = 10
-
-
-    # pick the classification model
-    # model = GridLSTM(config["vocab_size"], config["embed_dim"], config["hidden_sz"])
+    config['vocab_size'] = len(TEXT_FIELD.vocab)
+    config['num_class'] = len(LABEL_FIELD.vocab)
+    config['num_genre'] = len(GENRE_FIELD.vocab)
+    config['lr'] = 5e-5
+    config['lr_decay'] = 1
+    config['clip_c'] = 5
     model = torch.load(model_path)
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
@@ -115,8 +112,6 @@ def main(options):
         model.cuda()
 
     # model = torch.load(model_path)
-    config["lr"] = 1e-04
-    epochs = 43
     optimizer = optim.Adam(params=model.parameters(), lr=config['lr'])
     lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=config['lr_decay'])
     curr_patience = patience
