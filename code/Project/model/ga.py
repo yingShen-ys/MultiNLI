@@ -17,13 +17,13 @@ class GenreAgnosticInference(nn.Module):
     Genre Agnostic Inference model for NLI, a structure that is similar to semi-supervised VAE
 
     Args:
-        (pz) --> (kz) --> (z) (partially observed)
-                  |
-                  v
-                 (x)
-                  ^
-                  |
-        (py) --> (ky) --> (y)
+        (zg) --> (g) (partially observed)
+          |
+          v
+         (x)
+          ^
+          |
+        (zy) --> (y)
 
     Input:
          - premise: sequences of premise sentences, converted to LongTensors
@@ -32,19 +32,17 @@ class GenreAgnosticInference(nn.Module):
     Output:
          - rep: a final representation for the sentence
     """
-    def __init__(self, x_dim, y_dim, z_dim,
-                 hy_dim, hz_dim, py_dim, pz_dim,
-                 vocab_size, embedding_size, hidden_size,
+    def __init__(self, x_dim, y_dim, g_dim,
+                 zy_dim, zg_dim, vocab_size,
+                 embedding_size, hidden_size,
                  label_loss_multiplier=None,
                  genre_loss_multiplier=None):
         super(GenreAgnosticInference, self).__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
-        self.z_dim = z_dim
-        self.hy_dim = hy_dim
-        self.hz_dim = hz_dim
-        self.py_dim = py_dim
-        self.pz_dim = pz_dim
+        self.g_dim = g_dim
+        self.zy_dim = zy_dim
+        self.zg_dim = zg_dim
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
@@ -59,79 +57,108 @@ class GenreAgnosticInference(nn.Module):
         self.sentence_encoder = SentenceEncoder(self.vocab_size,
                                                 self.embedding_size,
                                                 self.x_dim)
-        
-        # define the probabilistic encoders (variational distributions)
-        # mean-field assumption: py and ky factorizes
-        self.encoder_py = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
-                                                  [self.hidden_size, self.hidden_size],
-                                                  self.py_dim)
-        self.encoder_ky = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
-                                                  [self.hidden_size, self.hidden_size],
-                                                  self.ky_dim)
-        # auxilliary likelihood
-        self.encoder_y = CategoricalEncoder(self.x_dim,
-                                            [self.hidden_size, self.hidden_size],
-                                            self.y_dim)
 
-        # mean-field assumption: pz and kz factorizes
-        self.encoder_pz = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
-                                                  [self.hidden_size, self.hidden_size],
-                                                  self.pz_dim)
-        self.encoder_kz = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
-                                                  [self.hidden_size, self.hidden_size],
-                                                  self.kz_dim)
-        # genre likelihood
-        self.encoder_z = CategoricalEncoder(self.x_dim,
-                                            [self.hidden_size, self.hidden_size],
-                                            self.z_dim)
-
-        # define the probabilistic decoders (conditional distributions in model)
-        self.decoder_kz = DiagonalGaussianEncoder(self.pz_dim,
-                                                  [self.hidden_size, self.hidden_size],
-                                                  self.kz_dim)
-        self.decoder_ky = DiagonalGaussianEncoder(self.py_dim,
-                                                  [self.hidden_size, self.hidden_size],
-                                                  self.ky_dim)
-        self.decoder_z = CategoricalEncoder(self.kz_dim,
-                                            [self.hidden_size, self.hidden_size],
-                                            self.z_dim)
-        self.decoder_y = CategoricalEncoder(self.ky_dim,
-                                            [self.hidden_size, self.hidden_size],
-                                            self.y_dim)
-        self.decoder_x = DiagonalGaussianEncoder(self.kz_dim+self.ky_dim,
+        # define the probabilistic decoders (generative distributions)
+        self.decoder_x = DiagonalGaussianEncoder(self.zy_dim+self.zg_dim,
                                                  [self.hidden_size, self.hidden_size],
                                                  self.x_dim)
+        self.decoder_y = CategoricalEncoder(self.zy_dim,
+                                            [self.hidden_size, self.hidden_size],
+                                            self.y_dim)
+        self.decoder_g = CategoricalEncoder(self.zg_dim,
+                                            [self.hidden_size, self.hidden_size],
+                                            self.g_dim)
+        # define the probabilistic encoders (variational distributions in model)
+        self.encoder_zg = DiagonalGaussianEncoder(self.x_dim+self.g_dim,
+                                                  [self.hidden_size, self.hidden_size],
+                                                  self.zg_dim)
+        self.encoder_zy = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
+                                                  [self.hidden_size, self.hidden_size],
+                                                  self.zy_dim)
+        self.encoder_g = CategoricalEncoder(self.kz_dim,
+                                            [self.hidden_size, self.hidden_size],
+                                            self.z_dim)
+        self.encoder_y = CategoricalEncoder(self.ky_dim,
+                                            [self.hidden_size, self.hidden_size],
+                                            self.y_dim)
 
-    def model(self, xs, ys, zs=None):
+
+    def generative_model(self, xh, xp, ys, gs=None):
         """
         This model have the following generative process:
-        p(pz) = normal(0, I)
-        p(py) = normal(0, I)
-        p(kz|pz) = normal(mu(pz), sigma(pz))
-        p(ky|py) = normal(mu(py), sigma(py))
-        p(z|kz) = categorical(theta(kz))
-        p(y|ky) = categorical(theta(ky))
-        p(x|kz, ky) = normal(mu(kz, ky), sigma(kz, ky))
+        p(zg) = normal(0, I)
+        p(zy) = normal(0, I)
+        p(z|zg) = categorical(theta(zg))
+        p(y|zy) = categorical(theta(zy))
+        p(x|zg, zy) = normal(mu(zg, zy), sigma(zg, zy))
+
+        It contains the following variational distributions:
+        q(g|x) = categorical(theta(x))
+        q(y|x) = categorical(theta(x))
+        q(zg|x, g) = normal(mu(x, g), sigma(x, g))
+        q(zy|x, g) = normal(mu(x, g), sigma(x, g))
         """
-        pyro.module("gai", self)
+        pyro.module("generative", self)
+        xs = self.sentence_encoder(xh, xp) # from (batch_sz, seq_len, embedding_sz) to (batch_sz, x_dim)
         batch_size = xs.size(0)
         with pyro.iarange("data"):
-            pz_prior_loc = xs.new_zeros([batch_size, self.pz_dim])
-            pz_prior_scale = xs.new_ones([batch_size, self.pz_dim])
-            py_prior_loc = xs.new_zeros([batch_size, self.py_dim])
-            py_prior_scale = xs.new_ones([batch_size, self.py_dim])
-            pz = pyro.sample("pz", dist.Normal(pz_prior_loc, pz_prior_scale).independent(1))
-            py = pyro.sample("py", dist.Normal(py_prior_loc, py_prior_scale).independent(1))
+            zg_prior_loc = xs.new_zeros([batch_size, self.zg_dim])
+            zg_prior_scale = xs.new_ones([batch_size, self.zg_dim])
+            zy_prior_loc = xs.new_zeros([batch_size, self.zy_dim])
+            zy_prior_scale = xs.new_ones([batch_size, self.zy_dim])
+            zg = pyro.sample("zG", dist.Normal(zg_prior_loc, zg_prior_scale).independent(1))
+            zy = pyro.sample("zY", dist.Normal(zy_prior_loc, zy_prior_scale).independent(1))
 
-            kz_loc, kz_scale = self.decoder_kz(pz)
-            ky_loc, ky_scale = self.decoder_ky(py)
-            kz = pyro.sample("kz", dist.Normal(kz_loc, kz_scale).independent(1))
-            ky = pyro.sample("ky", dist.Normal(ky_loc, ky_scale).independent(1))
+            x_loc, x_scale = self.decoder_x(torch.cat((zy, zg), dim=1))
+            theta_g = self.decoder_z(zg)
+            theta_y = self.decoder_y(zy)
+            
+            # observe the data
+            pyro.sample("X", dist.Normal(x_loc, x_scale).independence(1), obs=xs)
+            pyro.sample("G", dist.OneHotCategorical(theta_g).independence(1), obs=gs)
+            pyro.sample("Y", dist.OneHotCategorical(theta_y).independence(1), obs=ys)
 
-            theta_z = self.decoder_z(kz)
-            theta_y = self.decoder_y(ky)
+    def generative_guide(self, xh, xp, ys, gs=None):
+        xs = self.sentence_encoder(xh, xp) # from (batch_sz, seq_len, embedding_sz) to (batch_sz, x_dim)
+        with pyro.iarange("data"):
+            if gs is None:
+                theta_g = self.encoder_g(xs)
+                gs = pyro.sample("G", dist.OneHotCategorical(theta_g).independent(1))
 
+            zg_loc, zg_scale = self.encoder_zg(torch.cat((xs, gs), dim=1))
+            zy_loc, zy_scale = self.encoder_zy(torch.cat((ys, gs), dim=1))
+            
+            # observe the data
+            pyro.sample("zG", dist.Normal(zg_loc, zg_scale).independent(1))
+            pyro.sample("zY", dist.Normal(zy_loc, zy_scale).independent(1))
 
+    def discriminative_model(self, xh, xp, ys, gs=None):
+        pyro.module("discriminative", self)
+        xs = self.sentence_encoder(xh, xp) # from (batch_sz, seq_len, embedding_sz) to (batch_sz, x_dim)
+        with pyro.iarange("data"):
+            # only include loss term for genre if gs is provided
+            if gs is not None:
+                theta_g = self.encoder_g(xs)
+                with pyro.poutine.scale(self.genre_loss_multiplier):
+                    pyro.sample("G", dist.OneHotCategorical(theta_g).independent(1), obs=gs)
+
+            # loss term is always present for label
+            theta_y = self.encoder_y(xs)
+            with pyro.poutine.scale(self.label_loss_multiplier):
+                pyro.sample("Y", dist.OneHotCategorical(theta_y).independent(1), obs=ys)
+
+    def discriminative_guide(self, xh, xp, ys, gs=None):
+        """A dummy guide for discriminative loss"""
+        pass
+
+    def forward(self, xh, xp):
+        """
+        returns the categorical distribution over y and g
+        """
+        xs = self.sentence_encoder(xh, xp) # from (batch_sz, seq_len, embedding_sz) to (batch_sz, x_dim)
+        y_dist = self.encoder_y(xs)
+        g_dist = self.encoder_g(xs)
+        return y_dist, g_dist
 
 
 class SentenceEncoder(nn.Module):

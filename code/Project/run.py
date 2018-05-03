@@ -114,8 +114,8 @@ def main(options):
         model.cuda()
 
     # model = torch.load(model_path)
-    config["lr"] = 2.5e-05
-    epochs = 13
+    config["lr"] = 1e-04
+    epochs = 43
     optimizer = optim.Adam(params=model.parameters(), lr=config['lr'])
     lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=config['lr_decay'])
     curr_patience = patience
