@@ -24,14 +24,17 @@ class NLIDataloader():
             TEXT_FIELD = torchtext.data.Field(sequential=True, tokenize=(lambda s: s.split(' ')),
                                                batch_first=True, include_lengths=True, lower=True)
         LABEL_FIELD = torchtext.data.Field(sequential=False, batch_first=True, unk_token=None)
+        GENRE_FIELD = torchtext.data.Field(sequential=False, batch_first=True, unk_token=None)
 
-        multinli_train, multinli_match, multinli_mis_match = self.load_mutidata_json(TEXT_FIELD, LABEL_FIELD)
+        multinli_train, multinli_match, multinli_mis_match = self.load_mutidata_json(TEXT_FIELD, LABEL_FIELD, GENRE_FIELD)
         snli_train, snli_dev, snli_test = self.load_snlidata_json(TEXT_FIELD, LABEL_FIELD)
 
         TEXT_FIELD.build_vocab(multinli_train, multinli_match, multinli_mis_match,
                                snli_train, snli_dev, snli_test, vectors=self.embedding_name)
         LABEL_FIELD.build_vocab(multinli_train, multinli_match, multinli_mis_match,
                                snli_train, snli_dev, snli_test)
+
+        GENRE_FIELD.build_vocab(multinli_train, multinli_match, multinli_mis_match)
 
         
         snli_train_iter, snli_val_iter, snli_test_iter \
@@ -53,7 +56,7 @@ class NLIDataloader():
                TEXT_FIELD, LABEL_FIELD
 
 
-    def load_mutidata_json(self, text_field, label_field):
+    def load_mutidata_json(self, text_field, label_field, genre_field):
         """
         load the data in json format and form torchtext dataset
         :param path:
@@ -71,7 +74,8 @@ class NLIDataloader():
                                                                                'sentence2': ('hypothesis', text_field),
                                                                                # 'sentence1_binary_parse': ('premise_parse', text_field),
                                                                                # 'sentence2_binary_parse': ('hypothesis_parse', text_field),
-                                                                               'gold_label': ('label', label_field)},
+                                                                               'gold_label': ('label', label_field),
+                                                                               'genre': ('genre', genre_field)},
                                                                        filter_pred=lambda ex: ex.label != USELESS_LABEL)
 
 
