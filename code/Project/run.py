@@ -80,7 +80,7 @@ def main(options):
     # prepare the datasets
     (snli_train_iter, snli_val_iter, snli_test_iter), \
     (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
-    TEXT_FIELD, LABEL_FIELD \
+    TEXT_FIELD, LABEL_FIELD, GENRE_FIELD \
         = NLIDataloader(multinli_path, snli_path, config["pretained"]).load_nlidata(batch_size=config["batch_sz"],
                                                                                     gpu_option=device, tokenizer=tokenizer_method)
 
@@ -99,6 +99,7 @@ def main(options):
     # build model
     config["vocab_size"] = len(TEXT_FIELD.vocab)
     config["num_class"] = len(LABEL_FIELD.vocab)
+    config["num_genre"] = len(GENRE_FIELD.vocab)
     config["lr_decay"] = 1
     config["clip_c"] = 10
 

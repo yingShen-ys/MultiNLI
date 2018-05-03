@@ -53,7 +53,7 @@ class NLIDataloader():
 
         return (snli_train_iter, snli_val_iter, snli_test_iter), \
                (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
-               TEXT_FIELD, LABEL_FIELD
+               TEXT_FIELD, LABEL_FIELD, GENRE_FIELD
 
 
     def load_mutidata_json(self, text_field, label_field, genre_field):
