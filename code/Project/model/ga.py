@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.init import xavier_normal_
 import pyro
 import pyro.distributions as dist
 from pyro.infer import SVI, Trace_ELBO, TraceEnum_ELBO, config_enumerate
@@ -18,8 +19,10 @@ def long2onehot(long_tensors, num_classes):
     """
     if long_tensors is None:
         return None
-    long_tensors = long_tensors.view(1, -1)
-    onehot_tensors = long_tensors.new_zeros([long_tensors.size()[0], num_classes])
+    long_tensors = long_tensors.view(-1, 1)
+    onehot_tensors = torch.zeros([long_tensors.size()[0], num_classes])
+    if long_tensors.is_cuda:
+        onehot_tensors = onehot_tensors.cuda()
     onehot_tensors.scatter_(1, long_tensors, 1)
     return onehot_tensors
 
@@ -70,7 +73,7 @@ class GenreAgnosticInference(nn.Module):
                                                 self.x_dim)
 
         # define the probabilistic decoders (generative distributions)
-        self.decoder_x = DiagonalGaussianEncoder(self.zy_dim+self.zg_dim,
+        self.decoder_x = DiagonalGaussianEncoder([self.zy_dim, self.zg_dim],
                                                  [self.hidden_size, self.hidden_size],
                                                  self.x_dim)
         self.decoder_y = CategoricalEncoder(self.zy_dim,
@@ -80,16 +83,16 @@ class GenreAgnosticInference(nn.Module):
                                             [self.hidden_size, self.hidden_size],
                                             self.g_dim)
         # define the probabilistic encoders (variational distributions in model)
-        self.encoder_zg = DiagonalGaussianEncoder(self.x_dim+self.g_dim,
+        self.encoder_zg = DiagonalGaussianEncoder([self.x_dim, self.g_dim],
                                                   [self.hidden_size, self.hidden_size],
                                                   self.zg_dim)
-        self.encoder_zy = DiagonalGaussianEncoder(self.x_dim+self.y_dim,
+        self.encoder_zy = DiagonalGaussianEncoder([self.x_dim, self.y_dim],
                                                   [self.hidden_size, self.hidden_size],
                                                   self.zy_dim)
-        self.encoder_g = CategoricalEncoder(self.zg_dim,
+        self.encoder_g = CategoricalEncoder(self.x_dim,
                                             [self.hidden_size, self.hidden_size],
                                             self.g_dim)
-        self.encoder_y = CategoricalEncoder(self.zy_dim,
+        self.encoder_y = CategoricalEncoder(self.x_dim,
                                             [self.hidden_size, self.hidden_size],
                                             self.y_dim)
 
@@ -129,14 +132,14 @@ class GenreAgnosticInference(nn.Module):
             zg = pyro.sample("zG", dist.Normal(zg_prior_loc, zg_prior_scale).independent(1))
             zy = pyro.sample("zY", dist.Normal(zy_prior_loc, zy_prior_scale).independent(1))
 
-            x_loc, x_scale = self.decoder_x(torch.cat((zy, zg), dim=1))
-            theta_g = self.decoder_z(zg)
+            x_loc, x_scale = self.decoder_x(zy, zg)
+            theta_g = self.decoder_g(zg)
             theta_y = self.decoder_y(zy)
-            
+
             # observe the data
-            pyro.sample("X", dist.Normal(x_loc, x_scale).independence(1), obs=xs)
-            pyro.sample("G", dist.OneHotCategorical(theta_g).independence(1), obs=gs)
-            pyro.sample("Y", dist.OneHotCategorical(theta_y).independence(1), obs=ys)
+            pyro.sample("X", dist.Normal(x_loc, x_scale).independent(1), obs=xs)
+            pyro.sample("G", dist.OneHotCategorical(theta_g), obs=gs)
+            pyro.sample("Y", dist.OneHotCategorical(theta_y), obs=ys)
 
     def generative_guide(self, xh, xp, ys, gs=None):
         xs = self.sentence_encoder(xh, xp) # from (batch_sz, seq_len, embedding_sz) to (batch_sz, x_dim)
@@ -145,10 +148,14 @@ class GenreAgnosticInference(nn.Module):
         with pyro.iarange("data"):
             if gs is None:
                 theta_g = self.encoder_g(xs)
-                gs = pyro.sample("G", dist.OneHotCategorical(theta_g).independent(1))
+                gs = pyro.sample("G", dist.OneHotCategorical(theta_g))
 
-            zg_loc, zg_scale = self.encoder_zg(torch.cat((xs, gs), dim=1))
-            zy_loc, zy_scale = self.encoder_zy(torch.cat((ys, gs), dim=1))
+            # print(xs.size())
+            # print(gs.size())
+            # print(torch.cat((xs, gs), dim=1).size())
+            # input("Please press any key to continue!")
+            zg_loc, zg_scale = self.encoder_zg(xs, gs)
+            zy_loc, zy_scale = self.encoder_zy(xs, ys)
             
             # observe the data
             pyro.sample("zG", dist.Normal(zg_loc, zg_scale).independent(1))
@@ -163,13 +170,13 @@ class GenreAgnosticInference(nn.Module):
             # only include loss term for genre if gs is provided
             if gs is not None:
                 theta_g = self.encoder_g(xs)
-                with pyro.poutine.scale(self.genre_loss_multiplier):
-                    pyro.sample("G", dist.OneHotCategorical(theta_g).independent(1), obs=gs)
+                with pyro.poutine.scale(scale=self.genre_loss_multiplier):
+                    pyro.sample("G", dist.OneHotCategorical(theta_g), obs=gs)
 
             # loss term is always present for label
             theta_y = self.encoder_y(xs)
-            with pyro.poutine.scale(self.label_loss_multiplier):
-                pyro.sample("Y", dist.OneHotCategorical(theta_y).independent(1), obs=ys)
+            with pyro.poutine.scale(scale=self.label_loss_multiplier):
+                pyro.sample("Y", dist.OneHotCategorical(theta_y), obs=ys)
 
     def discriminative_guide(self, xh, xp, ys, gs=None):
         """A dummy guide for discriminative loss"""
@@ -202,6 +209,11 @@ class NaiveSentenceEncoder(nn.Module):
                             num_layers=num_layers, dropout=dropout, bidirectional=True,
                             batch_first=True)
         self.fc_layer = nn.Linear(hidden_size*num_layers*2*2, output_size)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.fc_layer.weight.data.normal_(0, 0.001)
+        self.fc_layer.bias.data.normal_(0, 0.001)
 
     def init_weight(self, pretrained_embedding):
         """
@@ -223,7 +235,7 @@ class NaiveSentenceEncoder(nn.Module):
         hypothesis_rep = hypothesis_rep.view(batch_sz, -1)
 
         total_rep = torch.cat((premise_rep, hypothesis_rep), dim=1)
-        final_rep = F.relu(self.fc_layer(total_rep)) #
+        final_rep = F.softplus(self.fc_layer(total_rep)) #
         return final_rep
 
 
@@ -327,15 +339,25 @@ class DiagonalGaussianEncoder(nn.Module):
     """
     def __init__(self, input_size, hidden_sizes, output_size):
         super(DiagonalGaussianEncoder, self).__init__()
-        self.layer_in = nn.Linear(input_size, hidden_sizes[0])
+        if isinstance(input_size, (list, tuple)):
+            self.layer_in = Parallel([nn.Linear(in_sz, hidden_sizes[0]) for in_sz in input_size])
+        else:
+            self.layer_in = nn.Linear(input_size, hidden_sizes[0])
         self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
         self.layer_out = nn.Linear(hidden_sizes[-1], 2*output_size)
+        self.reset_parameters()
 
-    def forward(self, input):
-        h = F.relu(self.layer_in(input))
-        h = F.relu(self.layer_h1(h))
+    def reset_parameters(self):
+        self.layer_h1.weight.data.normal_(0, 0.001)
+        self.layer_h1.bias.data.normal_(0, 0.001)
+        self.layer_out.bias.data.normal_(0, 0.001)
+        self.layer_out.weight.data.normal_(0, 0.001)
+
+    def forward(self, *input):
+        h = F.softplus(self.layer_in(*input))
+        h = F.softplus(self.layer_h1(h))
         o = self.layer_out(h)
-        mu, sigma = torch.chunk(o, 2, dim=1)
+        mu, sigma = torch.chunk(o, 2, dim=-1)
         sigma = torch.exp(sigma)
         return mu, sigma
 
@@ -358,15 +380,49 @@ class CategoricalEncoder(nn.Module):
     """
     def __init__(self, input_size, hidden_sizes, output_size):
         super(CategoricalEncoder, self).__init__()
-        self.layer_in = nn.Linear(input_size, hidden_sizes[0])
+        if isinstance(input_size, (list, tuple)):
+            self.layer_in = Parallel([nn.Linear(in_sz, hidden_sizes[0]) for in_sz in input_size])
+        else:
+            self.layer_in = nn.Linear(input_size, hidden_sizes[0])
         self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
         self.layer_out = nn.Linear(hidden_sizes[-1], output_size)
+        self.reset_parameters()
 
-    def forward(self, input):
-        h = F.relu(self.layer_in(input))
-        h = F.relu(self.layer_h1(h))
-        theta = F.softmax(self.layer_out(h), dim=1)
+    def reset_parameters(self):
+        self.layer_h1.weight.data.normal_(0, 0.001)
+        self.layer_h1.bias.data.normal_(0, 0.001)
+        self.layer_out.weight.data.normal_(0, 0.001)
+        self.layer_out.bias.data.normal_(0, 0.001)
+
+    def forward(self, *input):
+        h = F.softplus(self.layer_in(*input))
+        h = F.softplus(self.layer_h1(h))
+        theta = F.softmax(self.layer_out(h), dim=-1)
         return theta
+
+class Parallel(nn.Module):
+    """
+    An object that takes in a bunch of layers and concat them in parallel
+    """
+    def __init__(self, modules):
+        super(Parallel, self).__init__()
+        self.parallel_modules = nn.ModuleList(modules)
+        self.len = len(modules)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for module in self.parallel_modules:
+            module.weight.data.normal_(0, 0.001)
+            module.bias.data.normal_(0, 0.001)
+
+    def forward(self, *inputs):
+        assert len(inputs) == self.len, "inputs ({}) not equal to number of modules ({})".format(len(inputs), self.len)
+        # for input in inputs:
+        #     print(input.size())
+        # for module in self.parallel_modules:
+        #     print(module)
+        outputs = [module(input) for module, input in zip(self.parallel_modules, inputs)]
+        return sum(outputs)
 
 def test():
     model = SentenceEncoder(30, 15, 15)

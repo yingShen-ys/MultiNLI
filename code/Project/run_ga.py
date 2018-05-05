@@ -26,7 +26,28 @@ torch.cuda.manual_seed(seed)
 np.random.seed(seed)
 
 
-def main(args):
+# class RandomChain(object):
+#     """
+#     Chains two genrators randomly
+#     """
+
+#     def __init__(self, genA, genB):
+#         self.genA = genA
+#         self.genB = genB
+#         self.probs = np.array([len(genA), len(genB)])
+#         self.probs = self.probs / self.probs.sum() # normalize into probabilities
+
+#     def __iter__(self):
+#         self.lenA = 0
+#         self.lenB = 0
+#         return self
+    
+#     def __next__(self):
+        
+
+
+
+def main(args, config=None):
     run_id = args['run_id']
     signature = args['signature']
     epochs = args['epochs']
@@ -38,6 +59,9 @@ def main(args):
     snli_path = args['snli_data_path']
     gpu_option = args['gpu']
     resume = args['resume']
+    hypertune = args['hypertune']
+    if args['data'] == 'snli':
+        input("SNLI dataset's results recording is not implemented correctly, still continue?")
 
     if gpu_option >= 0:
         USE_GPU = True
@@ -57,7 +81,8 @@ def main(args):
     print("Grid search results are in: {}".format(output_path))
 
     # load a set of hyperparams
-    config = load_param("{}_{}_{}".format(model_name, run_id, signature))
+    if config is None and not hypertune:
+        config = load_param("{}_{}_{}".format(model_name, run_id, signature))
 
     # define tokenizer
     tokenizer_method = 'spacy'
@@ -66,7 +91,7 @@ def main(args):
     (snli_train_iter, snli_val_iter, snli_test_iter), \
     (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
     TEXT_FIELD, LABEL_FIELD, GENRE_FIELD \
-        = NLIDataloader(multinli_path, snli_path, config["pretained"]).load_nlidata(batch_size=config["batch_sz"],
+        = NLIDataloader(multinli_path, snli_path, config["pretrained"]).load_nlidata(batch_size=config["batch_sz"],
                                                                                     gpu_option=device, tokenizer=tokenizer_method)
     print("Dataset loaded.")
     vocab_size = len(TEXT_FIELD.vocab)
@@ -79,9 +104,11 @@ def main(args):
         train_iter = snli_train_iter
         val_iter = snli_val_iter
         test_iter = snli_test_iter
+        num_samples = len(snli_train_iter)
     else: # multinli
         # train_iter = combine_dataset(snli_train_iter, multinli_train_iter)
         train_iter = chain(multinli_train_iter, snli_train_iter)
+        num_samples = len(multinli_train_iter) + len(snli_train_iter)
         val_iter = snli_val_iter
         test_match_iter = multinli_match_iter
         test_mismatch_iter = multinli_mis_match_iter
@@ -109,6 +136,7 @@ def main(args):
     # lr_schedular = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=config['lr_decay'])
     curr_patience = patience
     min_valid_loss = float('Inf')
+    best_valid_acc = - float('Inf')
 
     # training & validation
     complete = True
@@ -118,8 +146,8 @@ def main(args):
         model.zero_grad()
         snli_train_iter.init_epoch()
         snli_val_iter.init_epoch()
-        epoch_losses_sup = [0.] * len(losses)
-        epoch_losses_unsup = [0.] * len(losses)
+        epoch_losses_sup = np.array([0.] * len(losses))
+        epoch_losses_unsup = np.array([0.] * len(losses))
         # print("Epoch {}: learning rate decay to {}".format(e, lr_schedular.get_lr()[0]))
         predictions_y = []
         predictions_g = []
@@ -127,7 +155,7 @@ def main(args):
         genres = []
         for batch_idx, batch in enumerate(train_iter):
             model.zero_grad()
-            
+
             premise, _premis_lens = batch.premise
             hypothesis, _hypothesis_lens = batch.hypothesis
             label = batch.label
@@ -139,7 +167,6 @@ def main(args):
             for loss_id, loss in enumerate(losses):
                 if genre is not None:
                     new_loss = loss.step(premise, hypothesis, label, genre)
-                    print("Loss produced by Pyro is of type: {}".format(type(new_loss)))
                     epoch_losses_sup[loss_id] += new_loss
                 else:
                     new_loss = loss.step(premise, hypothesis, label)
@@ -153,9 +180,7 @@ def main(args):
                 predictions_g.append(output_g.cpu().data.numpy())
 
             if (batch_idx+1) % 100 == 0:
-                print("Batch {}/{} complete! Supervised training\
-                      loss {}, unsupervised {}".format(batch_idx+1,
-                      len(train_iter), epoch_losses_sup, epoch_losses_unsup))
+                print("Batch {}/{} complete! Supervised training loss {}, unsupervised {}".format(batch_idx+1, num_samples, epoch_losses_sup/(batch_idx+1), epoch_losses_unsup/(batch_idx+1)))
 
         # if np.isnan(train_loss):
         #     print("Training: NaN values happened, rebooting...\n\n")
@@ -170,10 +195,8 @@ def main(args):
         predictions_y = np.argmax(predictions_y, axis=1)
         label_acc_score = accuracy_score(labels, predictions_y)
         predictions_g = np.argmax(predictions_g, axis=1)
-        genre_acc_score = accuracy_score(labels, predictions_g)
-        print("Epoch {} complete! Label accuracy: {}; genre\
-              accuracy: {}".format(e, label_acc_score, genre_acc_score))
-
+        genre_acc_score = accuracy_score(genres, predictions_g)
+        print("Epoch {} complete! Label accuracy: {}; genre accuracy: {}".format(e, label_acc_score, genre_acc_score))
 
         model.eval()
         valid_losses_sup = [0.] * len(losses)
@@ -211,22 +234,22 @@ def main(args):
         #     complete = False
         #     break
         valid_loss = sum(valid_losses_sup) + sum(valid_losses_unsup)
-        print("Validation loss: supervised: {}; unsupervised\
-              loss: {}; total: {}".format(valid_losses_sup, valid_losses_unsup, valid_loss))
+        print("Validation loss: supervised: {}; unsupervised loss: {}; total: {}".format(valid_losses_sup, valid_losses_unsup, valid_loss))
 
         predictions_y = np.concatenate(predictions_y)
-        predictions_g = np.concatenate(predictions_g)
+        # predictions_g = np.concatenate(predictions_g)
         labels = np.concatenate(labels)
-        genres = np.concatenate(genres)
+        # genres = np.concatenate(genres)
 
         predictions_y = np.argmax(predictions_y, axis=1)
         label_acc_score = accuracy_score(labels, predictions_y)
-        predictions_g = np.argmax(predictions_g, axis=1)
-        genre_acc_score = accuracy_score(labels, predictions_g)
-        print("Validation label accuracy: {}; genre accuracy:\
-              {}".format(label_acc_score, genre_acc_score))
+        # predictions_g = np.argmax(predictions_g, axis=1)
+        # genre_acc_score = accuracy_score(genres, predictions_g)
+        print("Validation label accuracy: {}".format(label_acc_score))
 
-        if (valid_loss < min_valid_loss):
+        best_valid_acc = max(label_acc_score, best_valid_acc)
+        if valid_loss < min_valid_loss:
+            valid_acc_at_minimal_loss = label_acc_score
             curr_patience = patience
             min_valid_loss = valid_loss
             torch.save(model, model_path)
@@ -309,11 +332,12 @@ def main(args):
 
             print("Test mismatch F1:", f1_mismatch)
             print("Entailment classification (mismatch) Acc:", acc_score_mismatch)
-
+    return np.array([valid_acc_at_minimal_loss, min_valid_loss, f1_match, acc_score_match, f1_mismatch, acc_score_mismatch])
 
 if __name__ == "__main__":
     OPTIONS = argparse.ArgumentParser()
     OPTIONS.add_argument('--run_id', dest='run_id', type=int, default=1)
+    OPTIONS.add_argument('--hypertune', dest='hypertune', action='store_true')
     OPTIONS.add_argument('--signature', dest='signature', type=str, default="") # e.g. {model}_{data}
     OPTIONS.add_argument('--model', dest='model', type=str, default="ga")
     OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
@@ -328,7 +352,7 @@ if __name__ == "__main__":
     OPTIONS.add_argument('--output_path', dest='output_path',
                          type=str, default='results/')
     OPTIONS.add_argument('--gpu', dest='gpu', type=int, default=-1)
-    OPTIONS.add_argument('--resume', action='store_true')
+    OPTIONS.add_argument('--resume', dest='resume', action='store_true')
 
     ARGS = vars(OPTIONS.parse_args())
     main(ARGS)

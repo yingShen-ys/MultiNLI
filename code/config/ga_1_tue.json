@@ -1,12 +1,12 @@
 {
-	"pretained": "glove.840B.300d",
+	"pretrained": "glove.840B.300d",
 	"embed_dim": 300,
 	"batch_sz": 32,
 	"lr": 0.001,
 	"hidden": 300,
-	"x_dim": 150,
-	"zy_dim": 200,
-	"zg_dim": 200,
-	"llm": 1.0,
-	"glm": 1.0
+	"x_dim": 600,
+	"zy_dim": 300,
+	"zg_dim": 300,
+	"llm": 50,
+	"glm": 50
 }
