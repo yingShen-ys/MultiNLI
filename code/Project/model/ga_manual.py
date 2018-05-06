@@ -109,7 +109,7 @@ class GAIA(nn.Module):
         # encode
         y_loc, g_loc, zg_loc, zy_loc, zg_scale, zy_scale = self.encode(xp, xh, ys, gs)
 
-        # sampling
+        # sampling with reparametrization
         zg = distributions.Normal(zg_loc, zg_scale).rsample() # (b, h)
         zy = distributions.Normal(zy_loc, zy_scale).rsample() # (b, h')
 
