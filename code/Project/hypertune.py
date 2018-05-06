@@ -11,14 +11,14 @@ def get_params():
     """
     pretrained = "glove.840B.300d" # fixed
     embed_dim = 300 # fixed
-    batch_sz = 2 ** np.random.randint(0, 8) # powers of 2
+    batch_sz = 64 # powers of 2
     lr = np.random.choice([1, 3, 5, 7]) * np.random.choice([1e-4, 1e-5]) # categorical X log of 10
-    x_dim = embed_dim + np.random.randint(0, 4) * 100 # higher than embedding
-    hidden = x_dim + np.random.randint(0, 4) * 100 # higher than embedding and x_dim
-    zy_dim = x_dim - np.random.randint(0, 4) * 50 # no constraint
-    zg_dim = x_dim - np.random.randint(0, 4) * 50 # no constraint
-    llm = np.random.randint(20, 100) # 20 to 100
-    glm = np.random.randint(20, 100) # 20 to 100
+    x_dim = embed_dim + np.random.randint(-3, -1) * 50 # higher than embedding
+    hidden = x_dim + np.random.randint(0, 3) * 50 # higher than embedding and x_dim
+    zy_dim = np.random.randint(1, 2) * 20 # no constraint but not too big
+    zg_dim = np.random.randint(1, 2) * 50 # no constraint
+    llm = np.random.randint(70, 100) # 20 to 50
+    glm = np.random.randint(70, 100) # 20 to 50
     return pretrained, embed_dim, batch_sz, lr, x_dim, hidden, zy_dim, zg_dim, llm, glm
 
 def construct_params():
@@ -53,38 +53,52 @@ def hypertune(args):
     if not args['resume']:
         with open(output_path, 'w+') as f:
             logger = csv.writer(f)
-            logger.writerow(hyper_params + ['valid_loss', 'valid_acc', 'test_f1_match', 'test_acc_match', 'test_f1_mismatch', 'test_acc_mismatch'])
+            logger.writerow(hyper_params + ['valid_loss', 'valid_acc', 'test_f1_match', 'test_acc_match', 'test_f1_mismatch', 'test_acc_mismatch', 'epochs'])
     max_iter = args['epochs']  # maximum iterations/epochs per configuration
     eta = 3 # defines downsampling rate (default=3)
     logeta = lambda x: np.log(x)/np.log(eta)
     s_max = int(logeta(max_iter))  # number of unique executions of Successive Halving (minus one)
+    print("Number of unique execution of Successive Halving: {}".format(s_max))
     B = (s_max+1)*max_iter  # total number of iterations (without reuse) per execution of Succesive Halving (n,r)
+    print("Total number of iterations per execution of Successive Halving: {}".format(B))
 
     #### Begin Finite Horizon Hyperband outlerloop. Repeat indefinetely.
     for s in reversed(range(s_max+1)):
         n = int(np.ceil(int(B/max_iter/(s+1))*eta**s)) # initial number of configurations
+        print("Initial number of configurations: {}".format(n))
         r = max_iter*eta**(-s) # initial number of iterations to run configurations for
-
+        print("Initial number of iterations to run configurations for: {}".format(r))
         #### Begin Finite Horizon Successive Halving with (n,r)
         T = [construct_params() for _ in range(n)]
         for i in range(s+1):
             # Run each of the n_i configs for r_i iterations and keep best n_i/eta
             n_i = n*eta**(-i)
-            args['epochs'] = int(r*eta**(i))
-            val_losses = [try_params(args, t) for t in T]
-            with open(output_path, 'a+') as f:
-                logger = csv.writer(f)
-                for idx, hyp in enumerate(T):
-                    logger.writerow([hyp[k] for k in hyper_params] + list(val_losses[idx]))
+            r_i = int(r*eta**(i))
+            args['epochs'] = r_i
+            print("Run each of the {} configs for {} iterations and keep best {}".format(n_i, r_i, n_i/eta))
+            # val_losses = [try_params(args, t) for t in T]
+            val_losses = []
+            val_losses_sort = [] # the loss used for sorting
+            for idx, t in enumerate(T):
+                val_loss = try_params(args, t)
+                val_losses.append(val_loss)
+                val_losses_sort.append(val_loss[0])
+
+                with open(output_path, 'a+') as f:
+                    logger = csv.writer(f)
+                    logger.writerow([t[k] for k in hyper_params] + list(val_loss) + [r_i])
+
+            val_losses_sort = np.array(val_losses_sort)
             T = [T[i] for i in np.argsort(val_losses, axis=1)[0:int(n_i/eta)]]
 
 if __name__ == "__main__":
     OPTIONS = argparse.ArgumentParser()
     OPTIONS.add_argument('--run_id', dest='run_id', type=int, default=1)
+    OPTIONS.add_argument('--cell', dest='cell', type=str, default="lstm")
     OPTIONS.add_argument('--hypertune', dest='hypertune', action='store_true')
     OPTIONS.add_argument('--signature', dest='signature', type=str, default="") # e.g. {model}_{data}
     OPTIONS.add_argument('--model', dest='model', type=str, default="ga")
-    OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
+    OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=15)
     OPTIONS.add_argument('--patience', dest='patience', type=int, default=20)
     OPTIONS.add_argument('--multinli_data_path', dest='multinli_data_path',
                          type=str, default='../../data/multinli_1.0/')

@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.init import xavier_normal_
+from torch.nn.init import xavier_uniform_, orthogonal_
 import pyro
 import pyro.distributions as dist
 from pyro.infer import SVI, Trace_ELBO, TraceEnum_ELBO, config_enumerate
@@ -47,7 +47,7 @@ class GenreAgnosticInference(nn.Module):
          - rep: a final representation for the sentence
     """
     def __init__(self, x_dim, y_dim, g_dim,
-                 zy_dim, zg_dim, vocab_size,
+                 zy_dim, zg_dim, rnn_type, vocab_size,
                  embedding_size, hidden_size,
                  label_loss_multiplier,
                  genre_loss_multiplier):
@@ -57,6 +57,7 @@ class GenreAgnosticInference(nn.Module):
         self.g_dim = g_dim
         self.zy_dim = zy_dim
         self.zg_dim = zg_dim
+        self.rnn_type = rnn_type
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
@@ -70,30 +71,30 @@ class GenreAgnosticInference(nn.Module):
         # initialize a feature-extraction network
         self.sentence_encoder = NaiveSentenceEncoder(self.vocab_size,
                                                 self.embedding_size, self.hidden_size * 2,
-                                                self.x_dim)
+                                                self.x_dim, rnn_type=self.rnn_type)
 
         # define the probabilistic decoders (generative distributions)
         self.decoder_x = DiagonalGaussianEncoder([self.zy_dim, self.zg_dim],
-                                                 [self.hidden_size, self.hidden_size],
+                                                 [self.hidden_size],
                                                  self.x_dim)
         self.decoder_y = CategoricalEncoder(self.zy_dim,
-                                            [self.hidden_size, self.hidden_size],
+                                            [self.hidden_size],
                                             self.y_dim)
         self.decoder_g = CategoricalEncoder(self.zg_dim,
-                                            [self.hidden_size, self.hidden_size],
+                                            [self.hidden_size],
                                             self.g_dim)
         # define the probabilistic encoders (variational distributions in model)
         self.encoder_zg = DiagonalGaussianEncoder([self.x_dim, self.g_dim],
-                                                  [self.hidden_size, self.hidden_size],
+                                                  [self.hidden_size],
                                                   self.zg_dim)
         self.encoder_zy = DiagonalGaussianEncoder([self.x_dim, self.y_dim],
-                                                  [self.hidden_size, self.hidden_size],
+                                                  [self.hidden_size],
                                                   self.zy_dim)
         self.encoder_g = CategoricalEncoder(self.x_dim,
-                                            [self.hidden_size, self.hidden_size],
+                                            [self.hidden_size],
                                             self.g_dim)
         self.encoder_y = CategoricalEncoder(self.x_dim,
-                                            [self.hidden_size, self.hidden_size],
+                                            [self.hidden_size],
                                             self.y_dim)
 
     def init_weight(self, pretrained_embedding):
@@ -198,14 +199,17 @@ class NaiveSentenceEncoder(nn.Module):
     """
     An bi-directional LSTM to encoder sentence pairs
     """
-    def __init__(self, vocab_size, embedding_size, hidden_size, output_size, num_layers=2, dropout=0.15):
+    def __init__(self, vocab_size, embedding_size, hidden_size, output_size, rnn_type='lstm', num_layers=2, dropout=0.15):
         super(NaiveSentenceEncoder, self).__init__()
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.output_size = output_size
         self.embedding = nn.Embedding(vocab_size, embedding_size)
-        self.LSTM = nn.LSTM(input_size=embedding_size, hidden_size=hidden_size,
+        self.rnn_type = rnn_type
+        self.num_layers = num_layers
+        rnn_model = {'rnn': nn.RNN, 'gru': nn.GRU, 'lstm': nn.LSTM}[rnn_type]
+        self.rnn = rnn_model(input_size=embedding_size, hidden_size=hidden_size,
                             num_layers=num_layers, dropout=dropout, bidirectional=True,
                             batch_first=True)
         self.fc_layer = nn.Linear(hidden_size*num_layers*2*2, output_size)
@@ -214,6 +218,22 @@ class NaiveSentenceEncoder(nn.Module):
     def reset_parameters(self):
         self.fc_layer.weight.data.normal_(0, 0.001)
         self.fc_layer.bias.data.normal_(0, 0.001)
+
+        # what pytorch should've done themselves
+        if self.rnn_type == "lstm":
+            for l in range(self.num_layers):
+                xavier_uniform_(getattr(self.rnn, "weight_ih_l{}".format(l)).data)
+                orthogonal_(getattr(self.rnn, "weight_hh_l{}".format(l)).data)
+                xavier_uniform_(getattr(self.rnn, "weight_ih_l{}{}".format(l, '_reverse')).data)
+                orthogonal_(getattr(self.rnn, "weight_hh_l{}{}".format(l, '_reverse')).data)
+                getattr(self.rnn, "bias_ih_l{}".format(l)).data.fill_(0)
+                getattr(self.rnn, "bias_ih_l{}".format(l)).data[self.hidden_size: 2*self.hidden_size] = 1./2
+                getattr(self.rnn, "bias_ih_l{}{}".format(l, '_reverse')).data.fill_(0)
+                getattr(self.rnn, "bias_ih_l{}{}".format(l, '_reverse')).data[self.hidden_size: 2*self.hidden_size] = 1./2
+                getattr(self.rnn, "bias_hh_l{}".format(l)).data.fill_(0)
+                getattr(self.rnn, "bias_hh_l{}".format(l)).data[self.hidden_size: 2*self.hidden_size] = 1./2
+                getattr(self.rnn, "bias_hh_l{}{}".format(l, '_reverse')).data.fill_(0)
+                getattr(self.rnn, "bias_hh_l{}{}".format(l, '_reverse')).data[self.hidden_size: 2*self.hidden_size] = 1./2
 
     def init_weight(self, pretrained_embedding):
         """
@@ -228,8 +248,8 @@ class NaiveSentenceEncoder(nn.Module):
         premise_emb = self.embedding(premise)
         hypothesis_emb = self.embedding(hypothesis)
 
-        _, (premise_rep, _) = self.LSTM(premise_emb) # (batch, num_layers * num_directions, hidden)
-        _, (hypothesis_rep, _) = self.LSTM(hypothesis_emb)
+        _, (premise_rep, _) = self.rnn(premise_emb) # (batch, num_layers * num_directions, hidden)
+        _, (hypothesis_rep, _) = self.rnn(hypothesis_emb)
 
         premise_rep = premise_rep.view(batch_sz, -1) # (batch, *)
         hypothesis_rep = hypothesis_rep.view(batch_sz, -1)
@@ -343,19 +363,21 @@ class DiagonalGaussianEncoder(nn.Module):
             self.layer_in = Parallel([nn.Linear(in_sz, hidden_sizes[0]) for in_sz in input_size])
         else:
             self.layer_in = nn.Linear(input_size, hidden_sizes[0])
-        self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
+            self.layer_in.weight.data.normal_(0, 0.001)
+            self.layer_in.bias.data.normal_(0, 0.001)
+        # self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
         self.layer_out = nn.Linear(hidden_sizes[-1], 2*output_size)
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.layer_h1.weight.data.normal_(0, 0.001)
-        self.layer_h1.bias.data.normal_(0, 0.001)
+        # self.layer_h1.weight.data.normal_(0, 0.001)
+        # self.layer_h1.bias.data.normal_(0, 0.001)
         self.layer_out.bias.data.normal_(0, 0.001)
         self.layer_out.weight.data.normal_(0, 0.001)
 
     def forward(self, *input):
         h = F.softplus(self.layer_in(*input))
-        h = F.softplus(self.layer_h1(h))
+        # h = F.softplus(self.layer_h1(h))
         o = self.layer_out(h)
         mu, sigma = torch.chunk(o, 2, dim=-1)
         sigma = torch.exp(sigma)
@@ -384,19 +406,21 @@ class CategoricalEncoder(nn.Module):
             self.layer_in = Parallel([nn.Linear(in_sz, hidden_sizes[0]) for in_sz in input_size])
         else:
             self.layer_in = nn.Linear(input_size, hidden_sizes[0])
-        self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
+            self.layer_in.weight.data.normal_(0, 0.001)
+            self.layer_in.bias.data.normal_(0, 0.001)
+        # self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
         self.layer_out = nn.Linear(hidden_sizes[-1], output_size)
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.layer_h1.weight.data.normal_(0, 0.001)
-        self.layer_h1.bias.data.normal_(0, 0.001)
+        # self.layer_h1.weight.data.normal_(0, 0.001)
+        # self.layer_h1.bias.data.normal_(0, 0.001)
         self.layer_out.weight.data.normal_(0, 0.001)
         self.layer_out.bias.data.normal_(0, 0.001)
 
     def forward(self, *input):
         h = F.softplus(self.layer_in(*input))
-        h = F.softplus(self.layer_h1(h))
+        # h = F.softplus(self.layer_h1(h))
         theta = F.softmax(self.layer_out(h), dim=-1)
         return theta
 

@@ -3,7 +3,7 @@ import sys
 import os
 
 sys.path.append("..")
-from model import GenreAgnosticInference # pylint: disable=E0611, C0413
+from model import SSVAE # pylint: disable=E0611, C0413
 from utils import NLIDataloader # pylint: disable=E0611, C0413
 from utils import evaluate, combine_dataset, load_param # pylint: disable=E0611, C0413
 
@@ -60,7 +60,7 @@ def main(args, config=None):
     gpu_option = args['gpu']
     resume = args['resume']
     hypertune = args['hypertune']
-    cell_type = args['cell']
+    print("Testing on SSVAE")
     if args['data'] == 'snli':
         input("SNLI dataset's results recording is not implemented correctly, still continue?")
 
@@ -122,20 +122,18 @@ def main(args, config=None):
 
     # build model
     if not resume:
-        model = GenreAgnosticInference(config['x_dim'], num_class, num_genre, config['zy_dim'],
-                                   config['zg_dim'], cell_type, vocab_size, config['embed_dim'],
-                                   config['hidden'], config['llm'], config['glm'])
+        model = SSVAE(vocab_size, output_size=num_class, config_enum='parallel', aux_loss_multiplier=config['llm'])
     else:
         model = torch.load(model_path)
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
-    optimizer = Adam({'lr': config['lr']})
-    guide = config_enumerate(model.generative_guide, 'parallel')
-    generative_loss = SVI(model.generative_model, guide, optimizer,
+    optimizer = Adam({'lr': config['lr'], 'betas': (0.9, 0.999)})
+    guide = config_enumerate(model.guide, 'parallel')
+    generative_loss = SVI(model.model, guide, optimizer,
                           loss=TraceEnum_ELBO(max_iarange_nesting=1))
-    discriminative_loss = SVI(model.discriminative_model,
-                              model.discriminative_guide, optimizer, loss=Trace_ELBO())
+    discriminative_loss = SVI(model.model_classify,
+                              model.guide_classify, optimizer, loss=Trace_ELBO())
     losses = [generative_loss, discriminative_loss]
     if USE_GPU:
         model.cuda()
@@ -157,89 +155,59 @@ def main(args, config=None):
         epoch_losses_unsup = np.array([0.] * len(losses))
         # print("Epoch {}: learning rate decay to {}".format(e, lr_schedular.get_lr()[0]))
         predictions_y = []
-        predictions_g = []
         labels = []
-        genres = []
+        # genres = []
         for batch_idx, batch in enumerate(train_iter):
             model.zero_grad()
 
             premise, _premis_lens = batch.premise
             hypothesis, _hypothesis_lens = batch.hypothesis
             label = batch.label
-            try:
-                genre = batch.genre
-            except AttributeError:
-                genre = None
+            # try:
+            #     genre = batch.genre
+            # except AttributeError:
+            #     genre = None
 
             for loss_id, loss in enumerate(losses):
-                if genre is not None:
-                    new_loss = loss.step(premise, hypothesis, label, genre)
-                    epoch_losses_sup[loss_id] += new_loss
-                else:
-                    new_loss = loss.step(premise, hypothesis, label)
-                    epoch_losses_unsup[loss_id] += new_loss
+                new_loss = loss.step(premise, hypothesis, label)
+                epoch_losses_unsup[loss_id] += new_loss
 
-            output_y, output_g = model(premise, hypothesis)
+            output_y = model.classifier(premise, hypothesis)
             predictions_y.append(output_y.cpu().data.numpy())
             labels.append(label.cpu().data.numpy())
-            if genre is not None:
-                genres.append(genre.cpu().data.numpy())
-                predictions_g.append(output_g.cpu().data.numpy())
 
             if (batch_idx+1) % 500 == 0:
                 print("Batch {}/{} complete! Supervised training loss {}, unsupervised {}".format(batch_idx+1, num_samples, epoch_losses_sup/(batch_idx+1), epoch_losses_unsup/(batch_idx+1)))
 
-            if np.isnan(epoch_losses_sup).any() or np.isnan(epoch_losses_unsup).any():
-                print("Training: NaN values happened, rebooting...\n\n")
-                complete = False
-                break
-
-        if not complete: # encountered NaN values
-            valid_acc_at_minimal_loss = 0
-            f1_match, acc_score_match, f1_mismatch, acc_score_mismatch = 0., 0., 0., 0.
-            break
+        # if np.isnan(train_loss):
+        #     print("Training: NaN values happened, rebooting...\n\n")
+        #     complete = False
+        #     break
 
         predictions_y = np.concatenate(predictions_y)
-        predictions_g = np.concatenate(predictions_g)
         labels = np.concatenate(labels)
-        genres = np.concatenate(genres)
 
         predictions_y = np.argmax(predictions_y, axis=1)
         label_acc_score = accuracy_score(labels, predictions_y)
-        predictions_g = np.argmax(predictions_g, axis=1)
-        genre_acc_score = accuracy_score(genres, predictions_g)
-        print("Epoch {}/{} complete! Label accuracy: {}; genre accuracy: {}".format(e, epochs, label_acc_score, genre_acc_score))
+        print("Epoch {}/{} complete! Label accuracy: {}".format(e, epochs, label_acc_score))
 
         model.eval()
         valid_losses_sup = [0.] * len(losses)
         valid_losses_unsup = [0.] * len(losses)
-        predictions_g = []
         predictions_y = []
         labels = []
-        genres = []
         for _, batch in enumerate(val_iter):
             premise, _premis_lens = batch.premise
             hypothesis, _hypothesis_lens = batch.hypothesis
             label = batch.label
-            try:
-                genre = batch.genre
-            except AttributeError:
-                genre = None
 
             for loss_id, loss in enumerate(losses):
-                if genre is not None:
-                    new_loss = loss.evaluate_loss(premise, hypothesis, label, genre)
-                    valid_losses_sup[loss_id] += new_loss
-                else:
-                    new_loss = loss.evaluate_loss(premise, hypothesis, label)
-                    valid_losses_unsup[loss_id] += new_loss
+                new_loss = loss.evaluate_loss(premise, hypothesis, label)
+                valid_losses_unsup[loss_id] += new_loss
 
-            output_y, output_g = model(premise, hypothesis)
+            output_y = model.classifier(premise, hypothesis)
             predictions_y.append(output_y.cpu().data.numpy())
             labels.append(label.cpu().data.numpy())
-            if genre is not None:
-                genres.append(genre.cpu().data.numpy())
-                predictions_g.append(output_g.cpu().data.numpy())
 
         # if np.isnan(train_loss):
         #     print("Training: NaN values happened, rebooting...\n\n")
@@ -278,18 +246,13 @@ def main(args, config=None):
         best_model.eval()
         predictions = []
         labels = []
-        genres = []
         if args["data"] == "snli":
             for _, batch in enumerate(test_iter):
                 premise, _premis_lens = batch.premise
                 hypothesis, _hypothesis_lens = batch.hypothesis
                 label = batch.label
-                try:
-                    genre = batch.genre
-                except AttributeError:
-                    genre = None
 
-                output, _ = best_model(premise, hypothesis)
+                output = best_model.classifier(premise, hypothesis)
                 predictions.append(output.cpu().data.numpy())
                 labels.append(label.cpu().data.numpy())
 
@@ -309,12 +272,8 @@ def main(args, config=None):
                 premise, _premis_lens = batch.premise
                 hypothesis, _hypothesis_lens = batch.hypothesis
                 label = batch.label
-                try:
-                    genre = batch.genre
-                except AttributeError:
-                    genre = None
 
-                output, _ = best_model(premise, hypothesis)
+                output = best_model.classifier(premise, hypothesis)
                 predictions_match.append(output.cpu().data.numpy())
                 labels_match.append(label.cpu().data.numpy())
 
@@ -322,12 +281,8 @@ def main(args, config=None):
                 premise, _premis_lens = batch.premise
                 hypothesis, _hypothesis_lens = batch.hypothesis
                 label = batch.label
-                try:
-                    genre = batch.genre
-                except AttributeError:
-                    genre = None
 
-                output, _ = best_model(premise, hypothesis)
+                output = best_model.classifer(premise, hypothesis)
                 predictions_mismatch.append(output.cpu().data.numpy())
                 labels_mismatch.append(label.cpu().data.numpy())
 
@@ -352,7 +307,7 @@ if __name__ == "__main__":
     OPTIONS.add_argument('--cell', dest='cell', type=str, default='lstm')
     OPTIONS.add_argument('--hypertune', dest='hypertune', action='store_true')
     OPTIONS.add_argument('--signature', dest='signature', type=str, default="") # e.g. {model}_{data}
-    OPTIONS.add_argument('--model', dest='model', type=str, default="ga")
+    OPTIONS.add_argument('--model', dest='model', type=str, default="ssvae")
     OPTIONS.add_argument('--epochs', dest='epochs', type=int, default=500)
     OPTIONS.add_argument('--patience', dest='patience', type=int, default=20)
     OPTIONS.add_argument('--multinli_data_path', dest='multinli_data_path',
