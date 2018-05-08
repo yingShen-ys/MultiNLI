@@ -66,10 +66,11 @@ def main(options):
 
     # prepare the datasets
     (snli_train_iter, snli_val_iter, snli_test_iter), \
-    (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
+    (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter), \
     TEXT_FIELD, LABEL_FIELD \
         = NLIDataloader(multinli_path, snli_path, pretained).load_nlidata(batch_size=params["batch_sz"],
-                                                                          gpu_option=device)
+                                                                                    gpu_option=device,
+                                                                                    tokenizer='spacy')
 
     # pick the training, validation, testing sets
     if options["data"] == "snli":
