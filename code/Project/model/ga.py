@@ -2,11 +2,18 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.init import xavier_uniform_, orthogonal_
-import pyro
-import pyro.distributions as dist
-from pyro.infer import SVI, Trace_ELBO, TraceEnum_ELBO, config_enumerate
-from pyro.optim import Adam
+try:
+    from torch.nn.init import xavier_uniform_, orthogonal_
+except:
+    from torch.nn.init import xavier_normal as xavier_uniform_
+    from torch.nn.init import orthogonal as orthogonal_
+try:
+    import pyro
+    import pyro.distributions as dist
+    from pyro.infer import SVI, Trace_ELBO, TraceEnum_ELBO, config_enumerate
+    from pyro.optim import Adam
+except:
+    print("Cannot import Pyro! Probably using older version of PyTorch.")
 
 SEED = 233
 torch.manual_seed(SEED)
@@ -52,6 +59,7 @@ class GenreAgnosticInference(nn.Module):
                  label_loss_multiplier,
                  genre_loss_multiplier):
         super(GenreAgnosticInference, self).__init__()
+        raise NotImplementedError("Softmax removed but not added later")
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.g_dim = g_dim
@@ -199,7 +207,8 @@ class NaiveSentenceEncoder(nn.Module):
     """
     An bi-directional LSTM to encoder sentence pairs
     """
-    def __init__(self, vocab_size, embedding_size, hidden_size, output_size, rnn_type='lstm', num_layers=2, dropout=0.15):
+    def __init__(self, vocab_size, embedding_size, hidden_size, output_size,
+                 rnn_type='lstm', num_layers=2, dropout=0.15):
         super(NaiveSentenceEncoder, self).__init__()
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
@@ -212,11 +221,13 @@ class NaiveSentenceEncoder(nn.Module):
         self.rnn = rnn_model(input_size=embedding_size, hidden_size=hidden_size,
                             num_layers=num_layers, dropout=dropout, bidirectional=True,
                             batch_first=True)
-        self.fc_layer = nn.Linear(hidden_size*num_layers*2*2, output_size)
+        self.fc_layer = nn.Linear(hidden_size*num_layers*2*2*3, output_size)
+        self.batchnorm_in = nn.BatchNorm1d(hidden_size*num_layers*2*2*3)
+        self.batchnorm_out = nn.BatchNorm1d(output_size)
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.fc_layer.weight.data.normal_(0, 0.001)
+        xavier_uniform_(self.fc_layer.weight.data)
         self.fc_layer.bias.data.normal_(0, 0.001)
 
         # what pytorch should've done themselves
@@ -248,15 +259,20 @@ class NaiveSentenceEncoder(nn.Module):
         premise_emb = self.embedding(premise)
         hypothesis_emb = self.embedding(hypothesis)
 
-        _, (premise_rep, _) = self.rnn(premise_emb) # (batch, num_layers * num_directions, hidden)
-        _, (hypothesis_rep, _) = self.rnn(hypothesis_emb)
+        _, premise_rep = self.rnn(premise_emb) # (batch, num_layers * num_directions, hidden)
+        _, hypothesis_rep = self.rnn(hypothesis_emb)
+
+        if isinstance(premise_rep, (tuple, list)): # allows different use of GRU and LSTM
+            premise_rep = premise_rep[0]
+            hypothesis_rep = hypothesis_rep[0]
 
         premise_rep = premise_rep.view(batch_sz, -1) # (batch, *)
         hypothesis_rep = hypothesis_rep.view(batch_sz, -1)
 
-        total_rep = torch.cat((premise_rep, hypothesis_rep), dim=1)
-        final_rep = F.softplus(self.fc_layer(total_rep)) #
-        return final_rep
+        total_rep = torch.cat((premise_rep, hypothesis_rep, torch.abs(premise_rep, hypothesis_rep, torch.mul(premise_rep, hypothesis_rep))), dim=1)
+        total_rep = self.batchnorm_in(total_rep)
+        final_rep = F.relu(self.fc_layer(total_rep)) #
+        return self.batchnorm_out(final_rep)
 
 
 class SentenceEncoder(nn.Module):
@@ -363,7 +379,7 @@ class DiagonalGaussianEncoder(nn.Module):
             self.layer_in = Parallel([nn.Linear(in_sz, hidden_sizes[0]) for in_sz in input_size])
         else:
             self.layer_in = nn.Linear(input_size, hidden_sizes[0])
-            self.layer_in.weight.data.normal_(0, 0.001)
+            xavier_uniform_(self.layer_in.weight.data)
             self.layer_in.bias.data.normal_(0, 0.001)
         # self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
         self.layer_out = nn.Linear(hidden_sizes[-1], 2*output_size)
@@ -373,7 +389,7 @@ class DiagonalGaussianEncoder(nn.Module):
         # self.layer_h1.weight.data.normal_(0, 0.001)
         # self.layer_h1.bias.data.normal_(0, 0.001)
         self.layer_out.bias.data.normal_(0, 0.001)
-        self.layer_out.weight.data.normal_(0, 0.001)
+        xavier_uniform_(self.layer_out.weight.data)
 
     def forward(self, *input):
         h = F.softplus(self.layer_in(*input))
@@ -406,7 +422,7 @@ class CategoricalEncoder(nn.Module):
             self.layer_in = Parallel([nn.Linear(in_sz, hidden_sizes[0]) for in_sz in input_size])
         else:
             self.layer_in = nn.Linear(input_size, hidden_sizes[0])
-            self.layer_in.weight.data.normal_(0, 0.001)
+            xavier_uniform_(self.layer_in.weight.data)
             self.layer_in.bias.data.normal_(0, 0.001)
         # self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
         self.layer_out = nn.Linear(hidden_sizes[-1], output_size)
@@ -415,13 +431,13 @@ class CategoricalEncoder(nn.Module):
     def reset_parameters(self):
         # self.layer_h1.weight.data.normal_(0, 0.001)
         # self.layer_h1.bias.data.normal_(0, 0.001)
-        self.layer_out.weight.data.normal_(0, 0.001)
+        xavier_uniform_(self.layer_out.weight.data)
         self.layer_out.bias.data.normal_(0, 0.001)
 
     def forward(self, *input):
         h = F.softplus(self.layer_in(*input))
         # h = F.softplus(self.layer_h1(h))
-        theta = F.softmax(self.layer_out(h), dim=-1)
+        theta = self.layer_out(h)
         return theta
 
 class Parallel(nn.Module):
@@ -436,7 +452,7 @@ class Parallel(nn.Module):
 
     def reset_parameters(self):
         for module in self.parallel_modules:
-            module.weight.data.normal_(0, 0.001)
+            xavier_uniform_(module.weight.data)
             module.bias.data.normal_(0, 0.001)
 
     def forward(self, *inputs):

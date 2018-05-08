@@ -3,7 +3,7 @@ import sys
 import os
 
 sys.path.append("..")
-from model import GenreAgnosticInference # pylint: disable=E0611, C0413
+from model import GAIA, ELBO, GAIAx, GAIAxlarge # pylint: disable=E0611, C0413
 from utils import NLIDataloader # pylint: disable=E0611, C0413
 from utils import evaluate, combine_dataset, load_param # pylint: disable=E0611, C0413
 
@@ -14,14 +14,8 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
-try:
-    import pyro
-    import pyro.distributions as dist
-    from pyro.contrib.examples.util import print_and_log, set_seed
-    from pyro.infer import SVI, Trace_ELBO, TraceEnum_ELBO, config_enumerate
-    from pyro.optim import Adam # pylint: disable=E0611, C0413, C0411
-except:
-    print("Cannot import Pyro! Probably using older version of PyTorch.")
+from torch.optim import Adam # pylint: disable=E0611, C0413, C0411
+import torch.nn.functional as F
 
 seed = 233
 torch.manual_seed(seed)
@@ -102,22 +96,31 @@ def main(args, config=None):
         test_mismatch_iter = multinli_mis_match_iter
 
     # build model
+    ssbilistm = torch.load("model_multi_ssbilstm_1.pt")
     if not resume:
-        model = GenreAgnosticInference(config['x_dim'], num_class, num_genre, config['zy_dim'],
-                                   config['zg_dim'], cell_type, vocab_size, config['embed_dim'],
-                                   config['hidden'], config['llm'], config['glm'])
+        if model_name == "ga":
+            print("Use default GAI model")
+            model = GAIA(config['x_dim'], num_class, num_genre, config['zy_dim'],
+                                    config['zg_dim'], cell_type, vocab_size, config['embed_dim'],
+                                    config['hidden'], config['llm'], config['glm'])
+            optimizer = Adam([{'params': model.sentence_encoder.parameters(), 'lr': config['lr']}, {'params': model.encoder_y.parameters(), 'lr': config['lr']/10}])
+        elif model_name == "gax":
+            print("Use GAIx (just an LSTM)")
+            model = GAIAx(config['x_dim'], num_class, num_genre, config['zy_dim'],
+                                    config['zg_dim'], cell_type, vocab_size, config['embed_dim'],
+                                    config['hidden'], config['llm'], config['glm'])
+            optimizer = Adam([{'params': model.sentence_encoder.parameters(), 'lr': config['lr']}, {'params': model.encoder_y.parameters(), 'lr': config['lr']/10}])
+        elif model_name == "pretrained":
+            print("Use pretrained model")
+            model = GAIAxlarge(config['x_dim'], num_class, num_genre, config['zy_dim'],
+                                    config['zg_dim'], cell_type, vocab_size, config['embed_dim'],
+                                    config['hidden'], config['llm'], config['glm'], pretrained=ssbilistm)
+            optimizer = Adam(model.parameters(), lr=config['lr'])
     else:
         model = torch.load(model_path)
 
     model.init_weight(TEXT_FIELD.vocab.vectors)
     print("Model initialized")
-    optimizer = Adam({'lr': config['lr']})
-    guide = config_enumerate(model.generative_guide, 'parallel')
-    generative_loss = SVI(model.generative_model, guide, optimizer,
-                          loss=TraceEnum_ELBO(max_iarange_nesting=1))
-    discriminative_loss = SVI(model.discriminative_model,
-                              model.discriminative_guide, optimizer, loss=Trace_ELBO())
-    losses = [generative_loss, discriminative_loss]
     if USE_GPU:
         model.cuda()
 
@@ -132,10 +135,20 @@ def main(args, config=None):
     #     lr_schedular.step()
         model.train()
         model.zero_grad()
-        snli_train_iter.init_epoch()
-        snli_val_iter.init_epoch()
-        epoch_losses_sup = np.array([0.] * len(losses))
-        epoch_losses_unsup = np.array([0.] * len(losses))
+        # snli_train_iter.init_epoch()
+        # snli_val_iter.init_epoch()
+        # multinli_train_iter.init_epoch()
+        # multinli_match_iter.init_epoch()
+        # multinli_mis_match_iter.init_epoch()
+        train_iter.init_epoch()
+        val_iter.init_epoch()
+        if args['data'] == 'snli':
+            test_iter.init_epoch()
+        else:
+            test_match_iter.init_epoch()
+            test_mismatch_iter.init_epoch()
+        epoch_losses_sup = 0.0
+        epoch_losses_unsup = 0.0
         # print("Epoch {}: learning rate decay to {}".format(e, lr_schedular.get_lr()[0]))
         predictions_y = []
         predictions_g = []
@@ -152,23 +165,34 @@ def main(args, config=None):
             except AttributeError:
                 genre = None
 
-            for loss_id, loss in enumerate(losses):
-                if genre is not None:
-                    new_loss = loss.step(premise, hypothesis, label, genre)
-                    epoch_losses_sup[loss_id] += new_loss
-                else:
-                    new_loss = loss.step(premise, hypothesis, label)
-                    epoch_losses_unsup[loss_id] += new_loss
+            info = model(premise, hypothesis, label, genre)
+            # loss = ELBO(info, label, genre, llm=config['llm'], glm=config['glm'], generative=False, variational=False)
+            output_y, output_g = info[0:2]
+            loss = F.cross_entropy(output_y, label)
+            # if e != 0 or 1:
+            loss.backward()
+            # input("Inspect encoder gradients and weights")
+            # print(model.encoder_y.layer_in.weight.grad)
+            # print(model.encoder_y.layer_in.weight)
+            # input("Inspect rnn gradients and weights")
+            # print(model.sentence_encoder.fc_layer.weight.grad)
+            # print(model.sentence_encoder.fc_layer.weight)
+            optimizer.step()
+            if genre is None:
+                epoch_losses_unsup += loss.item()
+            else:
+                epoch_losses_sup += loss.item()
 
-            output_y, output_g = model(premise, hypothesis)
             predictions_y.append(output_y.cpu().data.numpy())
             labels.append(label.cpu().data.numpy())
             if genre is not None:
                 genres.append(genre.cpu().data.numpy())
                 predictions_g.append(output_g.cpu().data.numpy())
 
+            # break
             if (batch_idx+1) % 500 == 0:
                 print("Batch {}/{} complete! Supervised training loss {}, unsupervised {}".format(batch_idx+1, num_samples, epoch_losses_sup/(batch_idx+1), epoch_losses_unsup/(batch_idx+1)))
+                # break
 
             if np.isnan(epoch_losses_sup).any() or np.isnan(epoch_losses_unsup).any():
                 print("Training: NaN values happened, rebooting...\n\n")
@@ -181,6 +205,9 @@ def main(args, config=None):
             break
 
         predictions_y = np.concatenate(predictions_y)
+        # print(predictions_y.shape)
+        # print(predictions_y)
+        # print(labels)
         predictions_g = np.concatenate(predictions_g)
         labels = np.concatenate(labels)
         genres = np.concatenate(genres)
@@ -192,13 +219,15 @@ def main(args, config=None):
         print("Epoch {}/{} complete! Label accuracy: {}; genre accuracy: {}".format(e, epochs, label_acc_score, genre_acc_score))
 
         model.eval()
-        valid_losses_sup = [0.] * len(losses)
-        valid_losses_unsup = [0.] * len(losses)
+        valid_losses_sup = 0.0
+        valid_losses_unsup = 0.0
         predictions_g = []
         predictions_y = []
         labels = []
         genres = []
         for _, batch in enumerate(val_iter):
+            model.zero_grad()
+
             premise, _premis_lens = batch.premise
             hypothesis, _hypothesis_lens = batch.hypothesis
             label = batch.label
@@ -207,15 +236,19 @@ def main(args, config=None):
             except AttributeError:
                 genre = None
 
-            for loss_id, loss in enumerate(losses):
-                if genre is not None:
-                    new_loss = loss.evaluate_loss(premise, hypothesis, label, genre)
-                    valid_losses_sup[loss_id] += new_loss
-                else:
-                    new_loss = loss.evaluate_loss(premise, hypothesis, label)
-                    valid_losses_unsup[loss_id] += new_loss
+            info = model(premise, hypothesis, label, genre)
+            # xs = model.sentence_encoder(premise, hypothesis) # encode sentence
+            # loss = ELBO(info, label, genre, llm=config['llm'], glm=config['glm'], generative=False, variational=False)
+            output_y, output_g = info[0:2]
+            loss = F.cross_entropy(output_y, label)
+            # loss.backward()
+            # optimizer.step()
 
-            output_y, output_g = model(premise, hypothesis)
+            if genre is None:
+                valid_losses_unsup += loss.item()
+            else:
+                valid_losses_sup += loss.item()
+
             predictions_y.append(output_y.cpu().data.numpy())
             labels.append(label.cpu().data.numpy())
             if genre is not None:
@@ -226,8 +259,8 @@ def main(args, config=None):
         #     print("Training: NaN values happened, rebooting...\n\n")
         #     complete = False
         #     break
-        valid_loss = sum(valid_losses_sup) + sum(valid_losses_unsup)
-        print("Validation loss: supervised: {}; unsupervised loss: {}; total: {}".format(valid_losses_sup, valid_losses_unsup, valid_loss))
+        valid_loss = valid_losses_sup + valid_losses_unsup
+        print("Validation loss: supervised: {}; unsupervised loss: {}; total: {}".format(valid_losses_sup / len(val_iter), valid_losses_unsup / len(val_iter), valid_loss / len(val_iter)))
 
         predictions_y = np.concatenate(predictions_y)
         # predictions_g = np.concatenate(predictions_g)
@@ -259,9 +292,10 @@ def main(args, config=None):
         best_model.eval()
         predictions = []
         labels = []
-        genres = []
         if args["data"] == "snli":
             for _, batch in enumerate(test_iter):
+                model.zero_grad()
+
                 premise, _premis_lens = batch.premise
                 hypothesis, _hypothesis_lens = batch.hypothesis
                 label = batch.label
@@ -270,8 +304,11 @@ def main(args, config=None):
                 except AttributeError:
                     genre = None
 
-                output, _ = best_model(premise, hypothesis)
-                predictions.append(output.cpu().data.numpy())
+                output_y, _ = best_model.classify(premise, hypothesis)
+                # loss.backward()
+                # optimizer.step()
+
+                predictions.append(output_y.cpu().data.numpy())
                 labels.append(label.cpu().data.numpy())
 
                 predictions = np.concatenate(predictions)
@@ -295,9 +332,9 @@ def main(args, config=None):
                 except AttributeError:
                     genre = None
 
-                output, _ = best_model(premise, hypothesis)
-                predictions_match.append(output.cpu().data.numpy())
-                labels_match.append(label.cpu().data.numpy())
+                output_y, _ = best_model.classify(premise, hypothesis)
+                predictions.append(output_y.cpu().data.numpy())
+                labels.append(label.cpu().data.numpy())
 
             for _, batch in enumerate(test_mismatch_iter):
                 premise, _premis_lens = batch.premise
@@ -308,9 +345,9 @@ def main(args, config=None):
                 except AttributeError:
                     genre = None
 
-                output, _ = best_model(premise, hypothesis)
-                predictions_mismatch.append(output.cpu().data.numpy())
-                labels_mismatch.append(label.cpu().data.numpy())
+                output_y, _ = best_model.classify(premise, hypothesis)
+                predictions.append(output_y.cpu().data.numpy())
+                labels.append(label.cpu().data.numpy())
 
             predictions_match = np.concatenate(predictions_match)
             labels_match = np.concatenate(labels_match)
