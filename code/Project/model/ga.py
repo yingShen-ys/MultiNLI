@@ -393,7 +393,7 @@ class DiagonalGaussianEncoder(nn.Module):
         for mod in self.layer_hidden:
             if isinstance(mod, nn.Linear):
                 xavier_uniform_(mod.weight.data)
-                mod.bias.data.normal(0, 0.001)
+                mod.bias.data.normal_(0, 0.001)
         self.layer_out.bias.data.normal_(0, 0.001)
         xavier_uniform_(self.layer_out.weight.data)
 
@@ -442,7 +442,7 @@ class CategoricalEncoder(nn.Module):
         for mod in self.layer_hidden:
             if isinstance(mod, nn.Linear):
                 xavier_uniform_(mod.weight.data)
-                mod.bias.data.normal(0, 0.001)
+                mod.bias.data.normal_(0, 0.001)
         xavier_uniform_(self.layer_out.weight.data)
         self.layer_out.bias.data.normal_(0, 0.001)
 

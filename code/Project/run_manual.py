@@ -166,9 +166,9 @@ def main(args, config=None):
                 genre = None
 
             info = model(premise, hypothesis, label, genre)
-            # loss = ELBO(info, label, genre, llm=config['llm'], glm=config['glm'], generative=False, variational=False)
+            loss = ELBO(info, label, genre, llm=config['llm'], glm=config['glm'])
             output_y, output_g = info[0:2]
-            loss = F.cross_entropy(output_y, label)
+            # loss = F.cross_entropy(output_y, label)
             # if e != 0 or 1:
             loss.backward()
             # input("Inspect encoder gradients and weights")
@@ -238,9 +238,8 @@ def main(args, config=None):
 
             info = model(premise, hypothesis, label, genre)
             # xs = model.sentence_encoder(premise, hypothesis) # encode sentence
-            # loss = ELBO(info, label, genre, llm=config['llm'], glm=config['glm'], generative=False, variational=False)
+            loss = ELBO(info, label, genre, llm=config['llm'], glm=config['glm'])
             output_y, output_g = info[0:2]
-            loss = F.cross_entropy(output_y, label)
             # loss.backward()
             # optimizer.step()
 

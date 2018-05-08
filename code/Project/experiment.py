@@ -11,10 +11,30 @@ import time
 
 multinli_path = '../../data/multinli_1.0/'
 snli_path = '../../data/snli_1.0/'
-model_path = './saved_models/final_model.pt'
-epochs = 50
+model_path = './saved_models/final_model2.pt'
+epochs = 20
 llm = 45
 glm = 25
+lr1 = 3e-3
+lr2 = 5e-4
+lr3 = 7e-4
+gpu = 0
+
+
+model = GAIA(x_dim=1200, y_dim=3,
+             g_dim=10, zy_dim=60,
+             zg_dim=200, rnn_type='gru',
+             vocab_size=88376, embedding_size=300,
+             hidden_size=300)
+
+lstm_params = model.sentence_encoder.parameters()
+encoders_params = list(model.encoder_g.parameters()) + list(model.encoder_y.parameters()) + list(model.encoder_zg.parameters()) + list(model.encoder_zy.parameters())
+decoders_params = list(model.decoder_g.parameters()) + list(model.decoder_x.parameters()) + list(model.decoder_y.parameters())
+optimizer = Adam([{'params': lstm_params, 'lr': lr1},
+                  {'params': encoders_params, 'lr': lr2},
+                  {'params': decoders_params, 'lr': lr3}])
+
+print("Model and optimizer built! Train for {} epochs!".format(epochs))
 
 print("Start loading data!")
 now = time.time()
@@ -22,30 +42,20 @@ now = time.time()
 (multinli_train_iter, multinli_match_iter, multinli_mis_match_iter),\
 TEXT_FIELD, LABEL_FIELD, GENRE_FIELD \
     = NLIDataloader(multinli_path, snli_path, "glove.840B.300d").load_nlidata(batch_size=64,
-                                                                                gpu_option=3, tokenizer='spacy')
+                                                                                gpu_option=gpu, tokenizer='spacy')
 elapsed = time.time() - now
 print("Data loaded, time elapsed: {}".format(elapsed))
 
 vocab_size = len(TEXT_FIELD.vocab)
+print("Vocabulary size: {}".format(vocab_size))
 num_class = len(LABEL_FIELD.vocab) # 3
 num_genre = len(GENRE_FIELD.vocab) # 10
 
 
-model = GAIA(x_dim=1200, y_dim=num_class,
-             g_dim=num_genre, zy_dim=60,
-             zg_dim=200, rnn_type='gru',
-             vocab_size=vocab_size, embedding_size=300,
-             hidden_size=300)
-
-
-optimizer = Adam([{'params': model.sentence_encoder.parameters(),
-                 'lr': 1e-3}, {'params': [params for params in model.parameters() if params not in list(model.sentence_encoder.parameters())], 'lr': 1e-4}])
-
-print("Model and optimizer built! Train for {} epochs!".format(epochs))
-
 min_valid_loss = float("Inf")
 patience = 20
 for e in range(epochs):
+    print("Starting epoch {}/{}...".format(e+1, epochs))
     multinli_match_iter.init_epoch()
     multinli_mis_match_iter.init_epoch()
     multinli_train_iter.init_epoch()
