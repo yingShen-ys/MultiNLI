@@ -47,31 +47,31 @@ class GAIA(nn.Module):
     def initialize_model(self):
         # initialize a feature-extraction network
         self.sentence_encoder = NaiveSentenceEncoder(self.vocab_size,
-                                                self.embedding_size, self.hidden_size*2,
+                                                self.embedding_size, self.hidden_size,
                                                 self.x_dim, rnn_type=self.rnn_type)
 
         # define the probabilistic decoders (generative distributions)
         self.decoder_x = DiagonalGaussianEncoder([self.zy_dim, self.zg_dim],
-                                                 [self.hidden_size],
+                                                 [self.hidden_size*2, self.hidden_size*3],
                                                  self.x_dim)
         self.decoder_y = CategoricalEncoder(self.zy_dim,
-                                            [self.hidden_size],
+                                            [self.hidden_size, self.hidden_size // 4],
                                             self.y_dim)
         self.decoder_g = CategoricalEncoder(self.zg_dim,
-                                            [self.hidden_size],
+                                            [self.hidden_size, self.hidden_size // 2],
                                             self.g_dim)
         # define the probabilistic encoders (variational distributions in model)
         self.encoder_zg = DiagonalGaussianEncoder([self.x_dim, self.g_dim],
-                                                  [self.hidden_size],
+                                                  [self.hidden_size, self.hidden_size],
                                                   self.zg_dim)
         self.encoder_zy = DiagonalGaussianEncoder([self.x_dim, self.y_dim],
-                                                  [self.hidden_size],
+                                                  [self.hidden_size, self.hidden_size],
                                                   self.zy_dim)
         self.encoder_g = CategoricalEncoder(self.x_dim,
-                                            [self.hidden_size],
+                                            [self.hidden_size, self.hidden_size // 2],
                                             self.g_dim)
         self.encoder_y = CategoricalEncoder(self.x_dim,
-                                            [self.hidden_size],
+                                            [self.hidden_size, self.hidden_size // 4],
                                             self.y_dim)
 
     def init_weight(self, pretrained_embedding):

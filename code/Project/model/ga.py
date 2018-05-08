@@ -381,19 +381,25 @@ class DiagonalGaussianEncoder(nn.Module):
             self.layer_in = nn.Linear(input_size, hidden_sizes[0])
             xavier_uniform_(self.layer_in.weight.data)
             self.layer_in.bias.data.normal_(0, 0.001)
-        # self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
+
+        hidden_layers = []
+        for t in range(len(hidden_sizes)-1):
+            hidden_layers += [nn.Linear(hidden_sizes[t], hidden_sizes[t+1]), nn.BatchNorm1d(hidden_sizes[t+1]), nn.Softplus()]
+        self.layer_hidden = nn.Sequential(*hidden_layers)
         self.layer_out = nn.Linear(hidden_sizes[-1], 2*output_size)
         self.reset_parameters()
 
     def reset_parameters(self):
-        # self.layer_h1.weight.data.normal_(0, 0.001)
-        # self.layer_h1.bias.data.normal_(0, 0.001)
+        for mod in self.layer_hidden:
+            if isinstance(mod, nn.Linear):
+                xavier_uniform_(mod.weight.data)
+                mod.bias.data.normal(0, 0.001)
         self.layer_out.bias.data.normal_(0, 0.001)
         xavier_uniform_(self.layer_out.weight.data)
 
     def forward(self, *input):
         h = F.softplus(self.layer_in(*input))
-        # h = F.softplus(self.layer_h1(h))
+        h = F.softplus(self.layer_hidden(h))
         o = self.layer_out(h)
         mu, sigma = torch.chunk(o, 2, dim=-1)
         sigma = torch.exp(sigma)
@@ -424,19 +430,25 @@ class CategoricalEncoder(nn.Module):
             self.layer_in = nn.Linear(input_size, hidden_sizes[0])
             xavier_uniform_(self.layer_in.weight.data)
             self.layer_in.bias.data.normal_(0, 0.001)
-        # self.layer_h1 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
+        
+        hidden_layers = []
+        for t in range(len(hidden_sizes)-1):
+            hidden_layers += [nn.Linear(hidden_sizes[t], hidden_sizes[t+1]), nn.BatchNorm1d(hidden_sizes[t+1]), nn.Softplus()]
+        self.layer_hidden = nn.Sequential(*hidden_layers)
         self.layer_out = nn.Linear(hidden_sizes[-1], output_size)
         self.reset_parameters()
 
     def reset_parameters(self):
-        # self.layer_h1.weight.data.normal_(0, 0.001)
-        # self.layer_h1.bias.data.normal_(0, 0.001)
+        for mod in self.layer_hidden:
+            if isinstance(mod, nn.Linear):
+                xavier_uniform_(mod.weight.data)
+                mod.bias.data.normal(0, 0.001)
         xavier_uniform_(self.layer_out.weight.data)
         self.layer_out.bias.data.normal_(0, 0.001)
 
     def forward(self, *input):
         h = F.softplus(self.layer_in(*input))
-        # h = F.softplus(self.layer_h1(h))
+        h = F.softplus(self.layer_hidden(h))
         theta = self.layer_out(h)
         return theta
 
